@@ -1,25 +1,728 @@
 ---
-title: "Exercise 5.8 - PCA and Measurement Units"
-output: html_document
+title: "Bài 5.8 — PCA và ảnh hưởng của đơn vị đo"
+author: "Nhóm Thống kê nhiều chiều"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
-source(here::here("R", "setup.R"))
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 8, fig.height = 5)
+# Xác định thư mục gốc khi knit từ exercises/ hoặc chạy trong RStudio Project.
+root <- if (file.exists("data/EXO_5_8.DAT")) "." else ".."
+path_data <- file.path(root, "data", "EXO_5_8.DAT")
+if (!file.exists(path_data)) stop("Không tìm thấy data/EXO_5_8.DAT. Kiểm tra tên file (O hay số 0) và thư mục project.")
+# Không cần source setup.R: tài liệu tự chạy độc lập, tránh lỗi do package chưa cài.
+show_table <- function(x, caption = NULL) {knitr::kable(x, caption = caption)}
 ```
 
-## 1. Introduction
+## Giới thiệu và đề bài 
 
-## 2. Data description
+Bài 5.8 sử dụng dữ liệu của Ví dụ 5.3, gồm 61 quan trắc và 5 biến. Biến thứ năm \(V_5\) (giá nhà) được đổi đơn vị từ **100.000 USD** sang **10.000 USD**: giá trị số của \(V_5\) phải **nhân 10**. Bài yêu cầu: 
+(a) suy ra ma trận hiệp phương sai mới.
+(b) xác định các cặp trị riêng–vector riêng và hai thành phần chính đầu. 
+(c) tính tỷ lệ phương sai giải thích, tương quan giữa PC và biến, rồi so sánh với Ví dụ 5.3.
 
-## 3. Methodology
+**Quy ước:** PCA trên ma trận hiệp phương sai mẫu, các biến được trừ trung bình. Vector riêng có thể đảo dấu mà không thay đổi PC về mặt hình học.
 
-## 4. PCA analysis
+## Dữ liệu và kiểm tra đầu vào
 
-```{r pca-analysis}
-# add analysis here
+```{r load-data}
+# đọc dữ liệu
+raw <- read.table(path_data, header = FALSE, stringsAsFactors = FALSE,
+                  fill = FALSE, comment.char = "")
+
+if (ncol(raw) != 5L) stop(sprintf("Đọc được %d cột (kỳ vọng 5). Kiểm tra định dạng file DAT.", ncol(raw)))
+if (!all(vapply(raw, is.numeric, logical(1)))) stop("Có cột không phải numeric; kiểm tra header và dấu phân cách.")
+if (anyNA(raw)) stop("Dữ liệu có NA; cần kiểm tra trước khi PCA.")
+
+names(raw) <- paste0("V", 1:5)
+cat("Kích thước dữ liệu:", nrow(raw), "x", ncol(raw), "\n")
+print(utils::head(raw))
+
+# kiểm tra đơn vị đo dựa trên trung bình của ví dụ 5.3
+reference_mean <- c(4.469016, 3.962295, 71.419836, 26.914754, 1.635574)
+mean_raw <- colMeans(raw)
+
+# khôi phục đơn vị gốc nếu v5 đã được nhân 10
+if (isTRUE(all.equal(mean_raw[1:4], reference_mean[1:4], tolerance = 0.01)) &&
+    abs(mean_raw[5] - 10 * reference_mean[5]) < 0.05) {
+  cen <- raw
+  cen$V5 <- cen$V5 / 10
+} else {
+  cen <- raw
+}
+
+if (nrow(cen) != 61L) warning("Số dòng khác 61 như Ví dụ 5.3.")
+
+# tính ma trận hiệp phương sai và tương quan
+S0 <- cov(cen)
+R0 <- cor(cen)
+
+# hiển thị thống kê mô tả
+descriptive_table <- data.frame(Variable = names(cen), Mean = colMeans(cen), SD = vapply(cen, sd, numeric(1)))
+
+knitr::kable(descriptive_table, format = "html", digits = 5,
+             col.names = c("Biến", "Trung bình", "Độ lệch chuẩn"),
+             align = c("c", "r", "r"),
+             caption = "Thống kê mô tả các biến trong dữ liệu ban đầu") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 13) |>
+  kableExtra::row_spec(0, bold = TRUE)
+
+# hiển thị ma trận hiệp phương sai ban đầu
+knitr::kable(S0, format = "html", digits = 5,
+             caption = "Ma trận hiệp phương sai của dữ liệu ban đầu") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 13) |>
+  kableExtra::row_spec(0, bold = TRUE)
 ```
 
-## 5. Results and interpretation
+Ma trận hiệp phương sai mẫu được định nghĩa bởi
 
-## 6. Conclusion
+\[
+S_X=\frac{1}{n-1}\sum_{j=1}^n(x_j-\bar x)(x_j-\bar x)^T.
+\]
+
+## Câu (a) — Biến đổi ma trận hiệp phương sai
+
+Đặt \(X=(V_1,V_2,V_3,V_4,V_5)^T\), \(Z=DX\), với
+
+\[
+D=\operatorname{diag}(1,1,1,1,10).
+\]
+
+Do \(\bar z=D\bar x\), ta có
+
+\[
+\begin{aligned}
+S_Z&=\frac{1}{n-1}\sum_{j=1}^n(z_j-\bar z)(z_j-\bar z)^T\\
+&=\frac{1}{n-1}\sum_{j=1}^nD(x_j-\bar x)(x_j-\bar x)^TD^T\\
+&=\boxed{DS_XD^T}.
+\end{aligned}
+\]
+
+Vì vậy, các phần tử ở góc \(4\times4\) phía trên trái không đổi; các hiệp phương sai \(s_{i5}=s_{5i}\), \(i=1,\ldots,4\), nhân 10; riêng phương sai \(s_{55}\) nhân 100.
+
+
+```{r covariance-transformation}
+# cách 1: tính ma trận hiệp phương sai bằng công thức biến đổi tuyến tính
+D <- diag(c(1, 1, 1, 1, 10))
+colnames(D) <- rownames(D) <- names(cen)
+S1 <- D %*% S0 %*% t(D)
+
+# cách 2: tính trực tiếp ma trận hiệp phương sai từ dữ liệu sau đổi đơn vị
+changed <- cen
+changed$V5 <- 10 * changed$V5
+S1_direct <- cov(changed)
+
+# kiểm chứng kết quả của hai phương pháp
+stopifnot(isTRUE(all.equal(unname(S1), unname(S1_direct), tolerance = 1e-10)))
+
+# hiển thị ma trận hiệp phương sai
+knitr::kable(S1, format = "html", digits = 5,
+             align = rep("r", 5),
+             caption = "Ma trận hiệp phương sai sau khi thay đổi đơn vị đo của V5") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 13) |>
+  kableExtra::row_spec(0, bold = TRUE)
+```
+
+Ma trận hiệp phương sai sau khi thay đổi đơn vị đo của biến \(V_5\), được xác định bằng công thức biến đổi tuyến tính \(S_1=DS_0D^T\), trùng khớp với ma trận hiệp phương sai được tính trực tiếp từ dữ liệu đã biến đổi, trong giới hạn sai số tính toán số học.
+
+Khi so sánh với ma trận hiệp phương sai ban đầu \(S_0\), các phần tử không liên quan đến \(V_5\) được giữ nguyên. Ngược lại, các hiệp phương sai giữa \(V_5\) và bốn biến còn lại tăng theo hệ số 10, trong khi phương sai của \(V_5\) tăng theo hệ số 100.
+
+Kết quả này xác nhận rằng việc thay đổi đơn vị đo có ảnh hưởng đến ma trận hiệp phương sai, mặc dù không làm thay đổi bản chất thông tin của dữ liệu.
+
+## Câu (b) — Trị riêng, vector riêng và hai thành phần chính
+
+Với \(S_Zv_i=\lambda_i v_i\), \(v_i^Tv_i=1\), sắp xếp \(\lambda_1\ge\cdots\ge\lambda_5\). Hai thành phần chính đầu tiên là
+
+\[
+Y_1=v_1^T(Z-\bar Z),\qquad Y_2=v_2^T(Z-\bar Z).
+\]
+
+### Xác định các trị riêng của ma trận hiệp phương sai sau biến đổi
+
+```{r eigenvalue-comparison}
+# tính trị riêng và vector riêng trước và sau khi đổi đơn vị
+eig0 <- eigen(S0, symmetric = TRUE)
+eig1 <- eigen(S1, symmetric = TRUE)
+
+# so sánh các trị riêng
+eigenvalue_comparison <- data.frame(
+  PC = paste0("PC", 1:5),
+  Eigenvalue_Original = eig0$values,
+  Eigenvalue_Changed = eig1$values,
+  Difference = eig1$values - eig0$values
+)
+
+knitr::kable(eigenvalue_comparison, format = "html", digits = 5,
+             col.names = c("PC", "Trước biến đổi", "Sau biến đổi", "Chênh lệch"),
+             align = c("c", "r", "r", "r"),
+             caption = "So sánh trị riêng trước và sau khi thay đổi đơn vị đo của V5") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 13) |>
+  kableExtra::row_spec(0, bold = TRUE) |>
+  kableExtra::row_spec(0, extra_css = "border-bottom: 1px solid #999;") |>
+  kableExtra::footnote(general = NULL)
+```
+
+
+**Xác định các vector riêng và so sánh các vector riêng**
+
+```{r eigenvector-comparison}
+# đặt tên các vector riêng
+rownames(eig0$vectors) <- rownames(eig1$vectors) <- names(cen)
+colnames(eig0$vectors) <- colnames(eig1$vectors) <- paste0("PC", 1:5)
+
+# vector riêng trước khi đổi đơn vị
+knitr::kable(
+  eig0$vectors,
+  caption = "Các vector riêng của ma trận hiệp phương sai ban đầu"
+)
+
+# vector riêng sau khi đổi đơn vị
+knitr::kable(
+  eig1$vectors,
+  caption = "Các vector riêng của ma trận hiệp phương sai sau biến đổi"
+)
+```
+
+Kết quả phân rã trị riêng cho thấy việc thay đổi đơn vị đo của biến \(V_5\) làm thay đổi các hệ số trong vector riêng của ma trận hiệp phương sai.
+
+Đối với thành phần chính thứ nhất (PC1), các hệ số có trị tuyệt đối lớn nhất vẫn thuộc về \(V_3\) và \(V_4\), với dấu trái ngược. Điều này cho thấy PC1 tiếp tục phản ánh chủ yếu sự tương phản giữa hai biến này. Tuy nhiên, hệ số của \(V_5\) tăng về trị tuyệt đối, thể hiện sự thay đổi trong hướng thành phần chính.
+
+Đối với PC2, hệ số của \(V_5\) thay đổi đáng kể, từ \(-0.0147434\) lên \(-0.5067043\), cho thấy biến này có vai trò lớn hơn trong tổ hợp tuyến tính xác định PC2 sau biến đổi.
+
+Đặc biệt, trước biến đổi, vector riêng thứ năm gần như trùng với hướng của \(V_5\), với hệ số bằng \(0.9886375\). Sau biến đổi, \(V_5\) trở thành biến có hệ số lớn nhất trong vector riêng thứ ba, bằng \(0.7681891\).
+
+### Phương trình 2 thành phần chính đầu tiên sau biến đổi
+```{r b3-principal-component-equations, results='asis'}
+# xây dựng phương trình thành phần chính từ vector riêng
+pc_equation <- function(v, pc_name) {
+  terms <- vapply(seq_along(v), function(j) {
+    paste0(
+      "(", sprintf("%.17g", v[j]), ")",
+      "(Z_", j, "-\\bar{Z}_", j, ")"
+    )
+  }, character(1))
+
+  paste0(pc_name, " = ", paste(terms, collapse = " + "))
+}
+
+cat("$$\n", pc_equation(eig1$vectors[, 1], "Y_1"), "\n$$\n\n")
+cat("$$\n", pc_equation(eig1$vectors[, 2], "Y_2"), "\n$$\n\n")
+```
+
+### Tính PC scores cho hai thành phần chính đầu tiên
+
+```{r principal-component-scores}
+# trừ trung bình các biến sau khi đổi đơn vị
+Zc <- scale(changed, center = TRUE, scale = FALSE)
+
+# tính điểm các thành phần chính
+scores1 <- as.matrix(Zc) %*% eig1$vectors
+colnames(scores1) <- paste0("PC", 1:5)
+
+# chuẩn bị bảng điểm của 6 quan sát đầu tiên
+scores_table <- data.frame(
+  Observation = paste0("Quan sát ", 1:6),
+  PC1 = scores1[1:6, 1],
+  PC2 = scores1[1:6, 2]
+)
+
+# trình bày bảng html
+knitr::kable(
+  scores_table,
+  format = "html",
+  digits = 5,
+  col.names = c("Quan sát", "PC1", "PC2"),
+  align = c("c", "r", "r"),
+  caption = "Bảng b.3. Điểm số hai thành phần chính của 6 quan sát đầu tiên"
+) |>
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    font_size = 13
+  ) |>
+  kableExtra::add_header_above(
+    c(" " = 1, "Điểm thành phần chính (PC scores)" = 2)
+  ) |>
+  kableExtra::column_spec(
+    2:3,
+    bold = TRUE
+  )
+```
+
+```{r pc-scores-plot}
+plot(scores1[, 1], scores1[, 2], pch = 19, cex = 0.75,
+     xlab = "PC1 score", ylab = "PC2 score",
+     main = "Quan trắc trên hai thành phần chính (sau đổi đơn vị)")
+abline(h = 0, v = 0, lty = 2, col = "gray60")
+```
+
+### Kiểm chứng phương sai PC bằng trị riêng
+```{r principal-component-variance-check}
+# tính phương sai mẫu của các điểm thành phần chính
+score_variance <- diag(cov(scores1))
+
+# đối chiếu phương sai với trị riêng tương ứng
+variance_check <- data.frame(
+  PC = paste0("PC", 1:5),
+  Eigenvalue = eig1$values,
+  Score_Variance = score_variance,
+  Difference = score_variance - eig1$values
+)
+
+knitr::kable(
+  variance_check,
+  caption = "Kiểm chứng phương sai các thành phần chính bằng trị riêng"
+)
+
+# kiểm tra sự phù hợp trong sai số tính toán
+stopifnot(isTRUE(all.equal(
+  unname(score_variance),
+  unname(eig1$values),
+  tolerance = 1e-8
+)))
+```
+
+## Câu (c) — Tỷ lệ phương sai giải thích và tương quan giữa các biến với thành phần chính
+
+### Tỷ lệ phương sai giải thích (Proportion of Variance Explained — PVE)
+
+**Cơ sở lý thuyết**
+
+Trong phân tích thành phần chính (Principal Component Analysis — PCA) dựa trên ma trận hiệp phương sai, mỗi trị riêng của ma trận hiệp phương sai biểu thị phương sai của thành phần chính tương ứng:
+
+$$
+\operatorname{Var}(PC_i)=\lambda_i,
+\qquad i=1,\ldots,5.
+$$
+
+Tổng phương sai của dữ liệu bằng tổng các trị riêng của ma trận hiệp phương sai:
+
+$$
+\operatorname{tr}(S)
+=\sum_{j=1}^{5}s_{jj}
+=\sum_{i=1}^{5}\lambda_i.
+$$
+
+Tỷ lệ phương sai được giải thích bởi thành phần chính thứ $i$ được xác định bởi:
+
+$$
+\boxed{
+\operatorname{PVE}_i
+=\frac{\lambda_i}{\sum_{j=1}^{5}\lambda_j}
+}
+$$
+
+Tỷ lệ phương sai giải thích tích lũy của $k$ thành phần chính đầu tiên (Cumulative Proportion of Variance Explained — CPVE) là:
+
+$$
+\boxed{
+\operatorname{CPVE}_k
+=\sum_{i=1}^{k}\operatorname{PVE}_i
+=\frac{\sum_{i=1}^{k}\lambda_i}
+{\sum_{j=1}^{5}\lambda_j}
+}
+$$
+
+Trong đó:
+
+- $\lambda_i$ là trị riêng thứ $i$ của ma trận hiệp phương sai.
+- $\operatorname{PVE}_i$ là tỷ lệ tổng phương sai được giải thích bởi PC thứ $i$.
+- $\operatorname{CPVE}_k$ là tỷ lệ tổng phương sai được giải thích bởi $k$ thành phần chính đầu tiên.
+
+Các tỷ lệ này được nhân với $100$ khi biểu diễn dưới dạng phần trăm.
+
+**Bảng so sánh PVE và CPVE trước và sau biến đổi**
+
+```{r c1-explained-variance}
+# tính tỷ lệ phương sai giải thích
+pve0 <- eig0$values / sum(eig0$values)
+pve1 <- eig1$values / sum(eig1$values)
+
+# tạo bảng pve và cpve
+variance_table <- data.frame(
+  PC = paste0("PC", 1:5),
+  PVE_Original = 100 * pve0,
+  CPVE_Original = 100 * cumsum(pve0),
+  PVE_Changed = 100 * pve1,
+  CPVE_Changed = 100 * cumsum(pve1)
+)
+
+# trình bày bảng theo nhóm cột
+knitr::kable(
+  variance_table,
+  format = "html",
+  digits = 4,
+  col.names = c("PC", "PVE (%)", "CPVE (%)", "PVE (%)", "CPVE (%)"),
+  align = c("c", "r", "r", "r", "r"),
+  caption = "Bảng c.1. Tỷ lệ phương sai giải thích trước và sau biến đổi",
+  escape = TRUE
+) |>
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    font_size = 13
+  ) |>
+  kableExtra::add_header_above(
+    c(" " = 1, "Trước biến đổi" = 2, "Sau biến đổi" = 2)
+  ) |>
+  kableExtra::row_spec(
+    2,
+    bold = TRUE
+  )
+```
+
+
+```{r c1-pve-comparison-plot, fig.width=9, fig.height=5.5, fig.cap="So sánh tỷ lệ phương sai giải thích trước và sau khi thay đổi đơn vị đo của V5"}
+# chuẩn bị dữ liệu cho biểu đồ
+pve_plot_data <- data.frame(
+  PC = factor(
+    rep(paste0("PC", 1:5), 2),
+    levels = paste0("PC", 1:5)
+  ),
+  PVE = c(100 * pve0, 100 * pve1),
+  Group = rep(c("Ban đầu", "Sau biến đổi"), each = 5)
+)
+
+# vẽ biểu đồ cột so sánh
+ggplot2::ggplot(
+  pve_plot_data,
+  ggplot2::aes(x = PC, y = PVE, fill = Group)
+) +
+  ggplot2::geom_col(
+    position = ggplot2::position_dodge(width = 0.8),
+    width = 0.7
+  ) +
+  ggplot2::scale_y_continuous(
+    labels = function(x) paste0(x, "%"),
+    expand = ggplot2::expansion(mult = c(0, 0.05))
+  ) +
+  ggplot2::labs(
+    x = "Thành phần chính",
+    y = "Tỷ lệ phương sai giải thích (%)",
+    fill = NULL
+  ) +
+  ggplot2::theme_minimal(base_size = 12) +
+  ggplot2::theme(
+    legend.position = "bottom",
+    panel.grid.minor = ggplot2::element_blank()
+  )
+```
+
+Trước khi thay đổi đơn vị đo của biến $V_5$, hai thành phần chính đầu tiên giải thích khoảng **92,80%** tổng phương sai của dữ liệu. Sau khi thay đổi đơn vị đo, tỷ lệ phương sai giải thích tích lũy của hai thành phần này giảm xuống khoảng **79,86%**.
+
+Trong khi đó, tỷ lệ phương sai giải thích của PC3 tăng đáng kể. Kết quả này phù hợp với sự thay đổi của các trị riêng và vector riêng đã được tính ở câu (b).
+
+Như vậy, việc thay đổi đơn vị đo đã làm thay đổi sự phân bổ phương sai giữa các thành phần chính, từ đó có thể ảnh hưởng đến quyết định lựa chọn số thành phần chính khi thực hiện giảm chiều dữ liệu.
+
+### Tương quan giữa các biến và thành phần chính
+
+Bên cạnh việc xác định tỷ lệ phương sai giải thích, ta cần xem xét mức độ liên hệ tuyến tính giữa các biến ban đầu và các thành phần chính.
+
+Gọi $\mathbf{v}_i=(v_{1i},\ldots,v_{5i})^T$ là vector riêng ứng với trị riêng $\lambda_i$ của ma trận hiệp phương sai.
+
+Thành phần chính thứ $i$ được xác định bởi:
+
+$$
+PC_i
+=\mathbf{v}_i^T(\mathbf{Z}-\bar{\mathbf{Z}})
+=\sum_{k=1}^{5}v_{ki}(Z_k-\bar Z_k).
+$$
+
+Theo định nghĩa hệ số tương quan mẫu:
+
+$$
+\widehat{\operatorname{Corr}}(PC_i,Z_k)
+=
+\frac{
+\widehat{\operatorname{Cov}}(PC_i,Z_k)
+}{
+\sqrt{\widehat{\operatorname{Var}}(PC_i)}
+\sqrt{\widehat{\operatorname{Var}}(Z_k)}
+}.
+$$
+
+Do $\mathbf{S}_1\mathbf{v}_i=\lambda_i\mathbf{v}_i$, ta có:
+
+$$
+\widehat{\operatorname{Cov}}(PC_i,Z_k)
+=
+\lambda_i v_{ki}.
+$$
+
+Mặt khác:
+
+$$
+\widehat{\operatorname{Var}}(PC_i)=\lambda_i,
+\qquad
+\widehat{\operatorname{Var}}(Z_k)=s_{kk}^{(Z)}.
+$$
+
+Suy ra công thức tính hệ số tương quan giữa thành phần chính thứ $i$ và biến thứ $k$:
+
+$$
+\boxed{
+\widehat{\operatorname{Corr}}(PC_i,Z_k)
+=
+\frac{\sqrt{\lambda_i}\,v_{ki}}
+{\sqrt{s_{kk}^{(Z)}}}
+}
+$$
+
+Trong đó:
+
+- $\lambda_i$ là trị riêng tương ứng với thành phần chính thứ $i$.
+- $v_{ki}$ là phần tử thứ $k$ của vector riêng thứ $i$.
+- $s_{kk}^{(Z)}$ là phương sai mẫu của biến thứ $k$ sau biến đổi.
+
+Hệ số tương quan có giá trị trong đoạn $[-1,1]$. Giá trị tuyệt đối càng gần $1$ cho thấy mối liên hệ tuyến tính càng mạnh, trong khi giá trị gần $0$ cho thấy mối liên hệ tuyến tính yếu.
+
+**Tính hệ số tương quan PC–biến**
+
+```{r c2-pc-variable-correlations}
+# tính tương quan giữa các biến và thành phần chính theo công thức lý thuyết
+pc_cor <- function(eig, S) {
+  ans <- sweep(
+    eig$vectors,
+    2,
+    sqrt(pmax(eig$values, 0)),
+    `*`
+  )
+
+  ans <- sweep(
+    ans,
+    1,
+    sqrt(diag(S)),
+    `/`
+  )
+
+  rownames(ans) <- names(cen)
+  colnames(ans) <- paste0("PC", seq_len(ncol(ans)))
+
+  ans
+}
+
+# tính tương quan trước và sau biến đổi
+cor0 <- pc_cor(eig0, S0)
+cor1 <- pc_cor(eig1, S1)
+```
+
+Hệ số tương quan trước biến đổi
+
+```{r c2-original-changed-correlations}
+# so sánh tương quan trước và sau biến đổi
+cor_comparison <- data.frame(
+  Variable = rownames(cor0),
+  PC1_Before = cor0[, 1],
+  PC2_Before = cor0[, 2],
+  PC1_After = cor1[, 1],
+  PC2_After = cor1[, 2],
+  PC1_Change = abs(cor1[, 1]) - abs(cor0[, 1]),
+  PC2_Change = abs(cor1[, 2]) - abs(cor0[, 2])
+)
+
+# hiển thị bảng so sánh
+knitr::kable(cor_comparison, format = "html", digits = 5, row.names = FALSE,
+             col.names = c("Biến", "PC1", "PC2", "PC1", "PC2", "PC1", "PC2"),
+             align = c("c", rep("r", 6)),
+             caption = "So sánh hệ số tương quan và mức thay đổi trước và sau biến đổi") |>
+  kableExtra::add_header_above(c(" " = 1, "Trước biến đổi" = 2, "Sau biến đổi" = 2, "Thay đổi |r|" = 2)) |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 13)
+```
+
+
+Kết quả phân tích hệ số tương quan giữa các biến và thành phần chính cho thấy, trước khi thay đổi đơn vị đo, PC1 có mối liên hệ tuyến tính mạnh nhất với hai biến \(V_4\) và \(V_3\), với hệ số tương quan lần lượt là \(-0.94604\) và \(0.68292\). Trong khi đó, PC2 có tương quan mạnh nhất với biến \(V_3\), đạt \(-0.72998\).
+
+Sau khi thay đổi đơn vị đo của \(V_5\), cấu trúc tương quan của PC1 tương đối ổn định, khi \(V_4\) và \(V_3\) vẫn là hai biến có hệ số tương quan lớn nhất về trị tuyệt đối.
+
+Tuy nhiên, đối với PC2, hệ số tương quan với \(V_5\) thay đổi đáng kể, từ \(-0.16451\) lên \(-0.58959\), cho thấy mức độ liên hệ tuyến tính giữa \(V_5\) và PC2 tăng lên rõ rệt. Đồng thời, tương quan giữa PC2 với \(V_2\) cũng tăng về trị tuyệt đối, trong khi tương quan với \(V_3\) giảm nhẹ. Mặc dù \(V_3\) vẫn có tương quan mạnh nhất với PC2, vai trò của \(V_5\) trong việc mô tả thành phần chính thứ hai trở nên nổi bật hơn sau biến đổi.
+
+**Trực quan hóa tương quan giữa các biến và thành phần chính**
+
+```{r c3-correlation-heatmap, fig.width=10, fig.height=5.5, fig.cap="So sánh tương quan giữa các biến và PC1, PC2 trước và sau biến đổi"}
+# chuyển ma trận tương quan sang dữ liệu dạng dài
+make_cor_data <- function(x, group) {
+  d <- as.data.frame(
+    as.table(x[, 1:2, drop = FALSE])
+  )
+
+  names(d) <- c("Variable", "PC", "Correlation")
+  d$Group <- group
+
+  d
+}
+
+# ghép dữ liệu trước và sau biến đổi
+cor_plot_data <- rbind(
+  make_cor_data(cor0, "Trước biến đổi"),
+  make_cor_data(cor1, "Sau biến đổi")
+)
+
+# vẽ heatmap
+ggplot2::ggplot(
+  cor_plot_data,
+  ggplot2::aes(
+    x = PC,
+    y = Variable,
+    fill = Correlation
+  )
+) +
+  ggplot2::geom_tile(color = "white") +
+  ggplot2::facet_wrap(~Group, nrow = 1) +
+  ggplot2::scale_fill_gradient2(
+    low = "#2166AC",
+    mid = "white",
+    high = "#B2182B",
+    midpoint = 0,
+    limits = c(-1, 1)
+  ) +
+  ggplot2::labs(
+    x = "Thành phần chính",
+    y = "Biến",
+    fill = "Tương quan"
+  ) +
+  ggplot2::theme_minimal(base_size = 12)
+```
+
+
+### Kiểm chứng công thức tương quan PC–biến
+
+Để kiểm chứng kết quả, hệ số tương quan được tính trực tiếp từ dữ liệu và PC scores, sau đó đối chiếu với kết quả tính theo công thức trị riêng–vector riêng.
+
+```{r c4-correlation-verification}
+# tính pc scores trước biến đổi
+scores0 <- as.matrix(
+  scale(cen, center = TRUE, scale = FALSE)
+) %*% eig0$vectors
+
+# kiểm chứng tương quan trước biến đổi
+stopifnot(isTRUE(all.equal(
+  unname(cor0),
+  unname(cor(cen, scores0)),
+  tolerance = 1e-8
+)))
+
+# kiểm chứng tương quan sau biến đổi
+stopifnot(isTRUE(all.equal(
+  unname(cor1),
+  unname(cor(changed, scores1)),
+  tolerance = 1e-8
+)))
+```
+
+
+### Kết luận 
+
+Kết quả phân tích cho thấy việc thay đổi đơn vị đo của biến \(V_5\) ảnh hưởng đáng kể đến kết quả PCA khi sử dụng ma trận hiệp phương sai. Cụ thể, tỷ lệ phương sai giải thích tích lũy của hai thành phần chính đầu tiên giảm từ khoảng 92,80% xuống 79,86%, tương ứng mức giảm 12,94 điểm phần trăm. Điều này cho thấy phương sai không còn tập trung nhiều vào hai thành phần chính đầu tiên như trước.
+
+Bên cạnh đó, cấu trúc tương quan giữa các biến và thành phần chính cũng có sự thay đổi. Trong khi PC1 vẫn có tương quan mạnh nhất với \(V_4\) và \(V_3\), tương quan giữa \(V_5\) và PC2 tăng đáng kể về trị tuyệt đối, từ 0.16451 lên 0.58959. Điều này cho thấy \(V_5\) có mối liên hệ mạnh hơn với PC2 sau biến đổi.
+
+Như vậy, PCA dựa trên ma trận hiệp phương sai nhạy cảm với đơn vị đo của các biến. Do đó, khi phân tích dữ liệu có thang đo khác nhau, cần cân nhắc chuẩn hóa dữ liệu hoặc sử dụng ma trận tương quan để hạn chế ảnh hưởng của đơn vị đo đến kết quả PCA.
+
+**Trực quan hóa so sánh**
+
+```{r plots-covariance, fig.height=5}
+# biểu đồ scree plot kết hợp cột và đường pve
+plot_pca_scree <- function(pve, title) {
+  pve_pct <- 100 * pve
+  bp <- barplot(pve_pct, names.arg = paste0("PC", seq_along(pve)),
+                col = "lightsteelblue", border = NA, ylim = c(0, 80),
+                xlab = "Thành phần chính", ylab = "Phương sai giải thích (%)",
+                main = title, cex.main = 1.1)
+
+  lines(bp, pve_pct, type = "b", pch = 19, col = "firebrick", lwd = 2)
+  text(bp, pve_pct, labels = sprintf("%.1f%%", pve_pct),
+       pos = 3, cex = 0.75, col = "firebrick")
+}
+
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+plot_pca_scree(pve0, "Trước đổi đơn vị")
+plot_pca_scree(pve1, "Sau đổi đơn vị")
+par(mfrow = c(1, 1))
+```
+**PCA dựa trên ma trận tương quan**
+
+```{r PCA_basedon_corr_matrix}
+# kiểm chứng tính bất biến của pca dựa trên ma trận tương quan
+R1 <- cor(changed)
+max_diff <- max(abs(R0 - R1))
+stopifnot(isTRUE(all.equal(unname(R0), unname(R1), tolerance = 1e-10)))
+
+eig_R0 <- eigen(R0, symmetric = TRUE)
+eig_R1 <- eigen(R1, symmetric = TRUE)
+
+# so sánh trị riêng trước và sau biến đổi
+cor_pca_table <- data.frame(
+  PC = paste0("PC", 1:5),
+  Before = eig_R0$values,
+  After = eig_R1$values,
+  Difference = eig_R1$values - eig_R0$values
+)
+
+knitr::kable(cor_pca_table, format = "html", digits = 6, row.names = FALSE,
+             col.names = c("Thành phần chính", "Trước biến đổi", "Sau biến đổi", "Chênh lệch"),
+             align = c("c", "r", "r", "r"),
+             caption = "So sánh trị riêng của PCA dựa trên ma trận tương quan") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 13)
+```
+
+Để đánh giá ảnh hưởng của đơn vị đo, thực hiện thêm PCA dựa trên ma trận tương quan. Kết quả cho thấy ma trận tương quan trước và sau biến đổi gần như trùng khớp, với sai khác chỉ ở mức sai số tính toán số học. Các trị riêng tương ứng cũng không thay đổi.
+
+Điều này cho thấy PCA dựa trên ma trận tương quan bất biến đối với phép thay đổi đơn vị đo bằng một hệ số dương. Ngược lại, PCA dựa trên ma trận hiệp phương sai chịu ảnh hưởng của thang đo, do đó việc lựa chọn ma trận phân tích cần phù hợp với đặc điểm dữ liệu và mục tiêu nghiên cứu.
+
+**Phân tích độ nhạy theo hệ số đơn vị**
+
+Để xem xét rõ hơn ảnh hưởng của việc thay đổi đơn vị đo đến kết quả PCA, ta mở rộng hệ số biến đổi của \(V_5\) thành \(c\in\{0.01,0.1,1,10,100\}\), thay vì chỉ xét \(c=10\). Với mỗi giá trị \(c\), ma trận hiệp phương sai được tính theo \(S(c)=D(c)S_0D(c)\). Từ đó, ta tính tỷ lệ phương sai giải thích của thành phần chính thứ nhất (\(\mathrm{PVE}_1\)) và tỷ lệ phương sai giải thích tích lũy của hai thành phần chính đầu tiên (\(\mathrm{CPVE}_2\)) để đánh giá mức độ nhạy cảm của PCA đối với đơn vị đo.
+
+```{r sensitivity-analysis}
+# phân tích độ nhạy theo hệ số thay đổi đơn vị đo của v5
+scales <- c(0.01, 0.1, 1, 10, 100)
+
+sensitivity <- do.call(rbind, lapply(scales, function(c) {
+  Dc <- diag(c(1, 1, 1, 1, c))
+  ev <- eigen(Dc %*% S0 %*% Dc, symmetric = TRUE)$values
+  data.frame(scale_V5 = c, PC1_pct = 100 * ev[1] / sum(ev),
+             PC2_pct = 100 * ev[2] / sum(ev),
+             PC1_PC2_pct = 100 * sum(ev[1:2]) / sum(ev))
+}))
+
+# hiển thị bảng kết quả
+knitr::kable(sensitivity, format = "html", digits = 3, row.names = FALSE,
+             col.names = c("Hệ số c", "PC1 (%)", "PC2 (%)", "PC1 + PC2 (%)"),
+             align = c("c", "r", "r", "r"),
+             caption = "Độ nhạy của tỷ lệ phương sai giải thích theo hệ số thay đổi đơn vị đo") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 13)
+
+# trực quan hóa độ nhạy của pca
+x <- log10(sensitivity$scale_V5)
+y <- as.matrix(sensitivity[, c("PC1_pct", "PC2_pct", "PC1_PC2_pct")])
+cols <- c("#2563A6", "#E69F00", "#C44E52")
+
+par(mar = c(5, 5, 4, 2), family = "sans")
+matplot(x, y, type = "b", pch = c(19, 17, 15), lty = c(1, 2, 3),
+        lwd = 2.3, cex = 1.2, col = cols, ylim = c(0, 105),
+        xaxt = "n", yaxt = "n", xlab = "Hệ số thay đổi đơn vị đo của V5",
+        ylab = "Tỷ lệ phương sai giải thích (%)",
+        main = "Độ nhạy của PCA đối với đơn vị đo", cex.main = 1.15)
+
+axis(1, at = x, labels = sensitivity$scale_V5)
+axis(2, at = seq(0, 100, 20), las = 1)
+abline(h = seq(0, 100, 20), col = "gray90", lty = 3)
+abline(v = 0, col = "gray65", lty = 3)
+
+legend("bottomleft", legend = c("PC1 (PVE)", "PC2 (PVE)", "PC1 + PC2 (CPVE)"),
+       col = cols, pch = c(19, 17, 15), lty = c(1, 2, 3),
+       lwd = 2.3, bty = "n", cex = 0.85)
+```
+
+Kết quả phân tích độ nhạy cho thấy khi hệ số biến đổi của \(V_5\) không vượt quá 1, tỷ lệ phương sai giải thích của hai thành phần chính đầu tiên gần như không thay đổi, duy trì khoảng 92,8%. Tuy nhiên, khi hệ số tăng lên 10, tỷ lệ này giảm đáng kể xuống còn khoảng 79,8%. Ngược lại, tại \(c=100\), tỷ lệ phương sai giải thích tích lũy tăng mạnh lên gần 99%, trong đó PC1 chiếm phần lớn phương sai, còn đóng góp của PC2 giảm rõ rệt.
+
+Điều này cho thấy tỷ lệ phương sai giải thích không thay đổi đơn điệu theo hệ số biến đổi. Khi thang đo của \(V_5\) quá lớn, PC1 có thể bị chi phối bởi phương sai của riêng biến này. Do đó, tỷ lệ phương sai giải thích cao chưa chắc phản ánh khả năng biểu diễn cân đối thông tin của các biến ban đầu.
