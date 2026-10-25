@@ -9,12 +9,55 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 source(here::here("R", "setup.R"))
+
+child_files <- c(
+  "01_exercise_5_7.Rmd",
+  "02_exercise_5_8.Rmd",
+  "03_exercise_5_11.Rmd",
+  "04_laliga.Rmd"
+)
+
+render_child <- function(file) {
+  path <- here::here("exercises", file)
+  if (!file.exists(path)) stop("Không tìm thấy file: ", path)
+
+  lines <- readLines(path, warn = FALSE)
+  has_yaml <- length(lines) > 0 && trimws(lines[1]) == "---"
+  title <- tools::file_path_sans_ext(basename(file))
+
+  if (has_yaml) {
+    yaml_end <- which(trimws(lines) %in% c("---", "..."))
+    yaml_end <- yaml_end[yaml_end > 1]
+
+    if (length(yaml_end) > 0) {
+      end <- yaml_end[1]
+      metadata <- yaml::yaml.load(paste(lines[2:(end - 1)], collapse = "\n"))
+      if (!is.null(metadata$title)) title <- as.character(metadata$title)[1]
+      lines <- if (end < length(lines)) lines[-seq_len(end)] else character(0)
+    }
+  }
+
+  # đổi tên chunk trong file con để tránh trùng với main và các file khác
+prefix <- tools::file_path_sans_ext(basename(file))
+
+lines <- vapply(lines, function(line) {
+  if (grepl("^\\s*```\\{r(?:\\s|,|\\})", line)) {
+    line <- sub(
+      "^(\\s*```\\{r)\\s+([[:alnum:]_.-]+)",
+      paste0("\\1 ", prefix, "-\\2"),
+      line
+    )
+  }
+  line
+}, character(1))
+
+content <- c(paste0("# ", title), "", lines)
+cat(knitr::knit_child(text = content, quiet = TRUE), sep = "\n")
+}
 ```
 
-# Exercise 5.7
-
-# Exercise 5.8
-
-# Exercise 5.11
-
-# La Liga
+```{r all-exercises, results='asis', echo=FALSE}
+for (file in child_files) {
+  render_child(file)
+}
+```
