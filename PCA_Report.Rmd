@@ -60,4 +60,8 @@ cat(knitr::knit_child(text = content, quiet = TRUE), sep = "\n")
 for (file in child_files) {
   render_child(file)
 }
+<<<<<<< HEAD
 ```
+=======
+```
+>>>>>>> 19668ba (Update PCA report with automatic titles and child chunks)
