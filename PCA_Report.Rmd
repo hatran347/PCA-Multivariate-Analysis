@@ -1,0 +1,20 @@
+---
+title: "Principal Component Analysis - Multivariate Statistics"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+source(here::here("R", "setup.R"))
+```
+
+# Exercise 5.7
+
+# Exercise 5.8
+
+# Exercise 5.11
+
+# La Liga

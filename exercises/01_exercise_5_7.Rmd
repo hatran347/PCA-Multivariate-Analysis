@@ -1,0 +1,25 @@
+---
+title: "Exercise 5.7 - PCA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+source(here::here("R", "setup.R"))
+```
+
+## 1. Introduction
+
+## 2. Data description
+
+## 3. Methodology
+
+## 4. PCA analysis
+
+```{r pca-analysis}
+# add analysis here
+```
+
+## 5. Results and interpretation
+
+## 6. Conclusion
