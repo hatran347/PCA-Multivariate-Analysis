@@ -1,4 +1,5 @@
 # packages
+options(repos = c(CRAN = "https://cloud.r-project.org"))
 required_packages <- c(
   "here", "dplyr", "tidyr", "ggplot2",
   "corrplot", "psych", "FactoMineR",
