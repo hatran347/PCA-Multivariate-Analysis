@@ -1,25 +1,960 @@
 ---
-title: "Exercise 5.11 - Food Security PCA"
-output: html_document
+title: "Bài 5.11 - PCA dữ liệu an ninh lương thực tại châu Phi"
+author: "Nhóm Thống kê nhiều chiều"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
-source(here::here("R", "setup.R"))
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 8, fig.height = 5)
+# Xác định thư mục gốc khi knit từ exercises/ hoặc chạy trong RStudio Project.
+root <- if (file.exists("data/EXO_5_8.DAT")) "." else ".."
+path_data <- file.path(root, "data", "EXO_5_8.DAT")
+if (!file.exists(path_data)) stop("Không tìm thấy data/EXO_5_8.DAT. Kiểm tra tên file (O hay số 0) và thư mục project.")
+# Không cần source setup.R: tài liệu tự chạy độc lập, tránh lỗi do package chưa cài.
+show_table <- function(x, caption = NULL) {knitr::kable(x, caption = caption)}
 ```
 
-## 1. Introduction
+## Giới thiệu và đề bài
 
-## 2. Data description
+Bài 5.11 sử dụng dữ liệu khảo sát **76 hộ nông dân tại châu Phi**, gồm **9 biến** phản ánh quy mô hộ gia đình (`Family`), khoảng cách đến đường (`DistRd`), diện tích canh tác (`Cotton`, `Maize`, `Sorg`, `Millet`) và số lượng vật nuôi (`Bull`, `Cattle`, `Goats`). Bài yêu cầu:
 
-## 3. Methodology
+(a) Vẽ scatterplots giữa `Family` và `DistRd`, giữa `DistRd` và `Cattle`; xác định và loại bỏ các quan sát ngoại lai rõ ràng.
 
-## 4. PCA analysis
+(b) Thực hiện PCA trên **ma trận tương quan mẫu** $R$, xác định số thành phần chính cần giữ dựa trên tỷ lệ phương sai giải thích và Scree Plot.
 
-```{r pca-analysis}
-# add analysis here
+(c) Diễn giải **năm thành phần chính đầu tiên**, xem xét khả năng nhận diện các yếu tố đại diện cho quy mô nông trại, quy mô vật nuôi và khoảng cách đến đường.
+
+## Dữ liệu và kiểm tra đầu vào
+
+```{r ex511-data}
+path_511 <- here::here("data", "EX0_5_11.DAT")
+vars_511 <- c("Family", "DistRd", "Cotton", "Maize", "Sorg", "Millet", "Bull", "Cattle", "Goats")
+data_511 <- read.table(path_511, header = FALSE, col.names = vars_511)
+stopifnot(ncol(data_511) == 9, nrow(data_511) == 76, all(vapply(data_511, is.numeric, logical(1))))
+knitr::kable(head(data_511, 6), format = "html", digits = 2, row.names = FALSE, caption = "Sáu quan sát đầu tiên") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 13)
 ```
 
-## 5. Results and interpretation
+## Câu (a) Biểu đồ phân tán và đánh giá ngoại lai
 
-## 6. Conclusion
+### Mục tiêu phân tích
+
+Câu (a) yêu cầu xây dựng hai biểu đồ phân tán giữa `Family` và `DistRd`, giữa `DistRd` và `Cattle`, từ đó xác định và loại bỏ những quan sát ngoại lai rõ ràng.
+
+Trước khi thực hiện PCA, cần khảo sát đặc điểm phân phối và mức độ biến thiên của các biến. Việc phát hiện ngoại lai được thực hiện theo hai hướng: đánh giá trực quan bằng scatterplots và rà soát bổ sung bằng các thước đo thống kê.
+
+**Nguyên tắc xử lý:** Một quan sát có giá trị lớn hoặc khác biệt so với phần lớn dữ liệu không nhất thiết là quan sát sai. Việc loại bỏ chỉ được thực hiện khi có cơ sở hợp lý từ biểu đồ và đặc điểm dữ liệu.
+
+### Thống kê mô tả
+
+```{r ex511-descriptive}
+desc_511 <- data.frame(
+  Variable = names(data_511),
+  Mean = sapply(data_511, mean),
+  SD = sapply(data_511, sd),
+  Min = sapply(data_511, min),
+  Median = sapply(data_511, median),
+  Max = sapply(data_511, max),
+  row.names = NULL
+)
+knitr::kable(
+  desc_511,
+  format = "html",
+  digits = 3,
+  row.names = FALSE,
+  caption = "Thống kê mô tả dữ liệu gốc"
+) |>
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "center",
+    font_size = 12
+  )
+```
+
+**Nhận xét:** Thống kê mô tả cho thấy nhiều biến có sự chênh lệch đáng kể giữa giá trị trung bình và trung vị, đồng thời giá trị lớn nhất vượt xa mức trung vị. Điều này cho thấy phân phối của các biến có xu hướng lệch phải và có thể tồn tại những quan sát cực trị.
+
+Đáng chú ý, `DistRd` có giá trị lớn nhất 500 km so với trung vị 10 km; `Cattle` có trung vị bằng 0 nhưng giá trị lớn nhất đạt 104 con; và `Family` có giá trị lớn nhất 145 người so với trung vị 25.5 người. Đây là ba biến cần được ưu tiên kiểm tra ngoại lai.
+
+Tuy nhiên, các thống kê mô tả chưa đủ để kết luận một quan sát là ngoại lai, bởi giá trị lớn có thể phản ánh sự khác biệt thực tế giữa các hộ nông dân. Do đó, cần tiếp tục khảo sát phân phối, hai biểu đồ phân tán và kiểm tra chi tiết các quan sát nghi ngờ trước khi quyết định loại bỏ.
+
+### Khảo sát phân phối của chín biến
+
+```{r ex511-distribution, fig.width=11, fig.height=8, fig.cap="Phân phối biên của chín biến"}
+op <- par(mfrow = c(3, 3), mar = c(3, 3, 2, 1))
+for (nm in names(data_511)) {
+  hist(
+    data_511[[nm]],
+    breaks = "FD",
+    main = nm,
+    xlab = "",
+    col = "lightsteelblue",
+    border = "white"
+  )
+}
+par(op)
+```
+
+Từ histogram chart, có thể thấy là hầu hết các biến có phân phối lệch phải, với phần lớn quan sát tập trung ở những giá trị thấp và đuôi phân phối kéo dài về phía các giá trị lớn.
+
+`Family`, `DistRd` và `Cattle` xuất hiện những giá trị cực trị nằm khá xa vùng tập trung chính của dữ liệu. Trong đó, `DistRd` và `Cattle` thể hiện mức độ lệch phải đặc biệt rõ rệt. Các biến diện tích canh tác và số lượng vật nuôi còn lại cũng có xu hướng lệch phải, nhưng mức độ khác nhau giữa các biến.
+
+Kết quả này cũng được thể hiện qua bảng thống kê mô tả, khi hầu hết các biến có trung bình lớn hơn trung vị và giá trị lớn nhất chênh lệch đáng kể so với phần lớn quan sát. Tuy nhiên, các giá trị lớn chưa hẳn là ngoại lai, mà có thể phản ánh sự khác biệt về quy mô giữa các hộ nông dân. Do đó, cần xem xét thêm các biểu đồ phân tán và kiểm tra từng quan sát nghi ngờ trước khi quyết định loại bỏ khỏi dữ liệu.
+
+### Biểu đồ phân tán
+
+Khảo sát hai mối quan hệ:
+
+- `Family` theo `DistRd`: quy mô hộ gia đình và khoảng cách đến đường.
+- `DistRd` theo `Cattle`: khoảng cách đến đường và số lượng gia súc.
+
+```{r ex511-scatter, fig.width=10, fig.height=4.5, fig.cap="Hai biểu đồ phân tán theo yêu cầu bài 5.11"}
+op <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+plot(
+  data_511$DistRd,
+  data_511$Family,
+  xlab = "DistRd (km)",
+  ylab = "Family (người)",
+  main = "Family theo DistRd",
+  pch = 19,
+  col = "steelblue"
+)
+plot(
+  data_511$Cattle,
+  data_511$DistRd,
+  xlab = "Cattle (con)",
+  ylab = "DistRd (km)",
+  main = "DistRd theo Cattle",
+  pch = 19,
+  col = "steelblue"
+)
+par(op)
+```
+
+Hai biểu đồ phân tán cho thấy phần lớn quan sát tập trung ở vùng có khoảng cách đến đường tương đối thấp, quy mô hộ gia đình và số lượng gia súc không quá lớn. Tuy nhiên, có một số điểm nằm tách biệt khỏi vùng tập trung chính, đáng chú ý là các quan sát có `DistRd` khoảng 500 km, `Family` đạt 145 người và `Cattle` đạt 104 con.
+
+Ngoài ra, một số quan sát có quy mô gia đình hoặc khoảng cách đến đường tương đối lớn cũng cần được xem xét thêm. Các điểm này sẽ được đối chiếu với dữ liệu gốc để xác định số thứ tự quan sát và kiểm tra giá trị của các biến còn lại trước khi quyết định giữ hay loại.
+
+**Áp dụng quy tắc IQR vào biểu đồ phần tán**
+
+```{r ex511-extreme, fig.width=10, fig.height=4.5, fig.cap="Các quan sát được đánh dấu để rà soát ngoại lai"}
+flag_iqr_511 <- sapply(data_511, function(x) {
+  q <- quantile(x, c(0.25, 0.75))
+  i <- diff(q)
+  x < q[1] - 1.5 * i | x > q[2] + 1.5 * i
+})
+flag_pairs_511 <- which(
+  flag_iqr_511[, "Family"] |
+  flag_iqr_511[, "DistRd"] |
+  flag_iqr_511[, "Cattle"]
+)
+op <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+plot(
+  data_511$DistRd,
+  data_511$Family,
+  xlab = "DistRd (km)",
+  ylab = "Family (người)",
+  pch = 19,
+  col = "gray60",
+  main = "Family theo DistRd"
+)
+points(
+  data_511$DistRd[flag_pairs_511],
+  data_511$Family[flag_pairs_511],
+  pch = 19,
+  col = "firebrick"
+)
+text(
+  data_511$DistRd[flag_pairs_511],
+  data_511$Family[flag_pairs_511],
+  labels = flag_pairs_511,
+  pos = 3,
+  cex = 0.65,
+  col = "firebrick"
+)
+plot(
+  data_511$Cattle,
+  data_511$DistRd,
+  xlab = "Cattle (con)",
+  ylab = "DistRd (km)",
+  pch = 19,
+  col = "gray60",
+  main = "DistRd theo Cattle"
+)
+points(
+  data_511$Cattle[flag_pairs_511],
+  data_511$DistRd[flag_pairs_511],
+  pch = 19,
+  col = "firebrick"
+)
+text(
+  data_511$Cattle[flag_pairs_511],
+  data_511$DistRd[flag_pairs_511],
+  labels = flag_pairs_511,
+  pos = 3,
+  cex = 0.65,
+  col = "firebrick"
+)
+par(op)
+```
+
+```{r ex511-flag-table}
+flag_table_511 <- data.frame(
+  Row = flag_pairs_511,
+  data_511[
+    flag_pairs_511,
+    c("Family", "DistRd", "Cattle"),
+    drop = FALSE
+  ],
+  row.names = NULL
+)
+knitr::kable(
+  flag_table_511,
+  format = "html",
+  digits = 2,
+  row.names = FALSE,
+  caption = "Các quan sát được đánh dấu theo quy tắc IQR"
+) |>
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "center",
+    font_size = 12
+  )
+```
+
+Theo quy tắc IQR, có 16 trên tổng số 76 quan sát được đánh dấu để kiểm tra ngoại lai. Trong đó, các quan sát số 25 (`Family = 145`), 34 (`Cattle = 104`) và 69, 72 (`DistRd = 500`) nằm tách biệt rõ so với phần lớn dữ liệu trên hai biểu đồ phân tán.
+
+Các quan sát có `DistRd` từ 80 đến 100 hoặc có quy mô gia đình, số lượng gia súc tương đối lớn cũng vượt ngưỡng IQR, nhưng mức độ tách biệt không rõ rệt bằng bốn quan sát trên. Do đó, cần phân biệt giữa những điểm cực trị riêng lẻ và những nhóm quan sát có giá trị cao.
+
+Trước khi xử lý, các quan sát nghi ngờ sẽ được kiểm tra trên toàn bộ chín biến để đánh giá tính hợp lý của dữ liệu. Quyết định giữ hoặc loại được đưa ra sau bước kiểm tra này, thay vì dựa hoàn toàn vào ngưỡng IQR.
+
+### Kiểm tra bổ sung bằng khoảng cách Mahalanobis
+
+Bên cạnh các phương pháp đơn biến và hai biến, khoảng cách Mahalanobis được sử dụng để phát hiện những tổ hợp giá trị bất thường trong không gian chín chiều.
+
+Với quan sát $\mathbf{x}_i$, khoảng cách Mahalanobis bình phương được xác định bởi
+
+$$D_i^2 =
+(\mathbf{x}_i-\bar{\mathbf{x}})^\top
+S^{-1}
+(\mathbf{x}_i-\bar{\mathbf{x}}),$$
+
+trong đó $\bar{\mathbf{x}}$ là vector trung bình mẫu và $S$ là ma trận hiệp phương sai mẫu.
+
+Dưới giả định chuẩn đa biến và khi các tham số tổng thể đã biết, khoảng cách Mahalanobis bình phương có phân phối $\chi^2_p$. Trong bài này, ngưỡng $\chi^2_{9,0.975}$ chỉ được sử dụng như **mốc tham khảo chẩn đoán**, không phải kiểm định chính xác để quyết định loại ngoại lai.
+
+```{r ex511-mahalanobis, fig.width=8, fig.height=4.5, fig.cap="Khoảng cách Mahalanobis bình phương của các quan sát"}
+md2_511 <- mahalanobis(
+  data_511,
+  colMeans(data_511),
+  cov(data_511)
+)
+cut_md_511 <- qchisq(0.975, df = ncol(data_511))
+plot(
+  seq_along(md2_511),
+  md2_511,
+  pch = 19,
+  col = ifelse(
+    md2_511 > cut_md_511,
+    "firebrick",
+    "steelblue"
+  ),
+  xlab = "Số thứ tự quan sát",
+  ylab = expression(D^2),
+  main = "Khoảng cách Mahalanobis"
+)
+abline(h = cut_md_511, col = "firebrick", lty = 2)
+text(
+  which(md2_511 > cut_md_511),
+  md2_511[md2_511 > cut_md_511],
+  labels = which(md2_511 > cut_md_511),
+  pos = 3,
+  cex = 0.65
+)
+```
+
+```{r ex511-mahalanobis-table}
+md_candidates_511 <- order(
+  md2_511,
+  decreasing = TRUE
+)[seq_len(min(10, length(md2_511)))]
+md_table_511 <- data.frame(
+  Row = md_candidates_511,
+  D2 = md2_511[md_candidates_511],
+  Above_reference = md2_511[md_candidates_511] > cut_md_511,
+  row.names = NULL
+)
+knitr::kable(
+  md_table_511,
+  format = "html",
+  digits = 3,
+  row.names = FALSE,
+  caption = "Mười quan sát có khoảng cách Mahalanobis lớn nhất"
+) |>
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "center",
+    font_size = 12
+  )
+```
+
+**Nhận xét:** Kết quả cho thấy có 10 quan sát có khoảng cách Mahalanobis bình phương vượt ngưỡng tham khảo $\chi^2_{9,0.975}\approx19,02$. Trong đó, các quan sát 34, 25, 72 và 69 có giá trị $D^2$ lớn nhất, lần lượt là 65,713; 41,070; 36,380 và 35,914.
+
+Bốn quan sát này cũng có giá trị cực trị trên các biểu đồ phân tán trước đó, tương ứng với `Cattle = 104`, `Family = 145` và `DistRd = 500`. Ngoài ra, Mahalanobis còn đánh dấu các quan sát 19, 30, 45, 52, 61 và 62. Đáng chú ý, quan sát 30 và 61 không bị đánh dấu bởi IQR trên ba biến `Family`, `DistRd` và `Cattle`, nhưng lại có khoảng cách Mahalanobis tương đối lớn.
+
+Như vậy, kết quả Mahalanobis bổ sung thêm các trường hợp cần kiểm tra ngoài những điểm đã nhận diện bằng scatterplots và IQR. Các quan sát này sẽ được xem xét trên toàn bộ chín biến trước khi quyết định xử lý.
+
+### Xử lý các quan sát ngoại lai
+
+**Tổng hợp các quan sát cần xem xét**: Các quan sát được đánh giá là ngoại lai từ IQR và khoảng cách Mahalanobis được tổng hợp như sau:
+
+```{r ex511-outlier-summary}
+candidate_rows_511 <- sort(unique(c(
+  flag_pairs_511,
+  which(md2_511 > cut_md_511)
+)))
+outlier_summary_511 <- data.frame(
+  Row = candidate_rows_511,
+  Family = data_511$Family[candidate_rows_511],
+  DistRd = data_511$DistRd[candidate_rows_511],
+  Cattle = data_511$Cattle[candidate_rows_511],
+  IQR_Flag = candidate_rows_511 %in% flag_pairs_511,
+  Mahalanobis_Flag = md2_511[candidate_rows_511] > cut_md_511,
+  D2 = md2_511[candidate_rows_511],
+  row.names = NULL
+)
+knitr::kable(
+  outlier_summary_511,
+  format = "html",
+  digits = 3,
+  row.names = FALSE,
+  caption = "Tổng hợp các quan sát cần xem xét trước khi xử lý"
+) |>
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "center",
+    font_size = 12
+  )
+```
+
+Bảng tổng hợp cho thấy có 18 quan sát được đánh dấu bởi ít nhất một trong hai phương pháp IQR và Mahalanobis. Tuy nhiên, mức độ bất thường giữa các quan sát không đồng nhất.
+
+Trong đó, bốn quan sát 25, 34, 69 và 72 nổi bật hơn cả. Quan sát 25 có `Family = 145`, quan sát 34 có `Cattle = 104`, trong khi hai quan sát 69 và 72 cùng có `DistRd = 500`. Các giá trị này tách biệt rõ so với phần lớn dữ liệu và cả bốn quan sát đều được hai phương pháp đánh dấu.
+
+Đối với những quan sát còn lại, mặc dù một số vượt ngưỡng IQR hoặc Mahalanobis, mức độ khác biệt trên các biến được khảo sát chưa đủ rõ để quyết định loại bỏ. Vì vậy, nghiên cứu lựa chọn loại bốn quan sát 25, 34, 69 và 72, đồng thời giữ lại các quan sát khác.
+
+Sau bước xử lý, tập dữ liệu còn 72 quan sát và được sử dụng để thực hiện phân tích thành phần chính ở câu (b).
+
+**Xử lý ngoại lai**
+
+Sau khi rà soát các quan sát nghi ngờ, danh sách những dòng thực sự cần loại được xác định thủ công.
+
+Trong trường hợp chưa đủ cơ sở để loại bỏ, dữ liệu gốc được giữ nguyên.
+
+```{r ex511-outliers}
+# cập nhật danh sách dòng cần loại sau khi kiểm tra
+exclude_rows_511 <- c(25, 34, 69, 72)
+
+data_clean_511 <- data_511[
+  !seq_len(nrow(data_511)) %in% exclude_rows_511,
+  ,
+  drop = FALSE
+]
+
+summary_outlier_511 <- data.frame(
+  Chi_tieu = c(
+    "Số quan sát ban đầu",
+    "Số quan sát bị loại",
+    "Số quan sát còn lại",
+    "Tỷ lệ quan sát bị loại (%)"
+  ),
+  Gia_tri = c(
+    nrow(data_511),
+    length(exclude_rows_511),
+    nrow(data_clean_511),
+    round(100 * length(exclude_rows_511) / nrow(data_511), 2)
+  )
+)
+
+knitr::kable(
+  summary_outlier_511,
+  format = "html",
+  col.names = c("Chỉ tiêu", "Giá trị"),
+  caption = "Kết quả xử lý các quan sát ngoại lai",
+  row.names = FALSE
+) |>
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "center",
+    font_size = 11
+  )
+```
+
+## Câu (b) PCA dựa trên ma trận tương quan
+
+### Cấu trúc tương quan giữa các biến
+
+Sau khi xử lý các quan sát ngoại lai, tiếp theo xem xét cấu trúc tương quan giữa chín biến. Phân tích này giúp nhận diện những nhóm biến có xu hướng biến thiên cùng nhau, đồng thời cung cấp cơ sở để thực hiện phân tích thành phần chính.
+
+```{r ex511-corrplot, fig.width=8, fig.height=7}
+R_511 <- cor(data_clean_511)
+
+corrplot::corrplot(
+  R_511,
+  method = "color",
+  type = "upper",
+  order = "original",
+  addCoef.col = "black",
+  number.cex = 0.65,
+  tl.col = "black",
+  tl.cex = 0.85,
+  tl.srt = 45,
+  col = colorRampPalette(
+    c("#B85C5C", "white", "#3F7EAD")
+  )(200),
+  diag = FALSE
+)
+```
+
+Ma trận tương quan cho thấy phần lớn các biến liên quan đến quy mô gia đình, diện tích canh tác và số lượng vật nuôi có tương quan dương. Trong đó, `Cotton` và `Bull` có tương quan mạnh nhất ($r=0.82$), tiếp theo là `Family` và `Cotton` ($r=0.76$), `Family` và `Bull` ($r=0.73$), cùng với `Cotton` và `Maize` ($r=0.72$).
+
+Kết quả này cho thấy các biến phản ánh hoạt động sản xuất nông nghiệp có xu hướng biến thiên cùng nhau liên quan đến quy mô sản xuất của hộ.
+
+Ngược lại, `DistRd` có tương quan yếu với hầu hết các biến còn lại, với hệ số tương quan nằm gần 0. Điều này cho thấy khoảng cách đến đường có thể phản ánh một khía cạnh tương đối độc lập với quy mô sản xuất nông nghiệp.
+
+### Lựa chọn ma trận tương quan thay cho ma trận hiệp phương sai
+
+Các biến trong bộ dữ liệu có đơn vị đo và mức độ phân tán khác nhau. Chẳng hạn, `DistRd` biểu diễn khoảng cách, trong khi `Family` phản ánh quy mô gia đình và các biến còn lại liên quan đến diện tích canh tác hoặc số lượng vật nuôi.
+
+Nếu PCA được thực hiện trực tiếp trên ma trận hiệp phương sai mẫu $S$, những biến có phương sai lớn có thể chi phối kết quả phân tích. Vì vậy, bài toán sử dụng ma trận tương quan mẫu $R$, tương đương với việc chuẩn hóa từng biến:
+
+$$Z_{ij}=\frac{X_{ij}-\bar X_j}{s_j}.$$
+
+Khi đó,
+
+$$R=\frac{1}{n-1}Z^\top Z.$$
+
+Việc chuẩn hóa đưa các biến về cùng thang đo với trung bình bằng 0 và phương sai bằng 1 giúp PCA phản ánh cấu trúc tương quan giữa các biến thay vì chịu ảnh hưởng trực tiếp từ sự khác biệt về đơn vị đo. Tuy nhiên, phép chuẩn hóa không loại bỏ ảnh hưởng của các quan sát cực trị đến ma trận tương quan và kết quả PCA.
+
+### Phân tích thành phần chính từ ma trận tương quan
+
+Phân tích thành phần chính được thực hiện trên dữ liệu sau xử lý ngoại lai.
+
+```{r ex511-pca}
+pca_511 <- prcomp(
+  data_clean_511,
+  center = TRUE,
+  scale. = TRUE
+)
+
+eigenvalues_511 <- pca_511$sdev^2
+pve_511 <- eigenvalues_511 / sum(eigenvalues_511)
+cpve_511 <- cumsum(pve_511)
+
+pca_summary_511 <- data.frame(
+  PC = paste0("PC", seq_along(eigenvalues_511)),
+  Eigenvalue = eigenvalues_511,
+  PVE = 100 * pve_511,
+  CPVE = 100 * cpve_511
+)
+
+knitr::kable(
+  pca_summary_511,
+  format = "html",
+  digits = 3,
+  row.names = FALSE,
+  caption = "Trị riêng và tỷ lệ phương sai giải thích của các thành phần chính (%)"
+) |>
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "center",
+    font_size = 12
+  )
+```
+
+Với PCA trên ma trận tương quan của $p=9$ biến, tổng các trị riêng bằng 9:
+
+$$\sum_{j=1}^{9}\lambda_j=9.$$
+
+Tỷ lệ phương sai giải thích của thành phần chính thứ $j$ được xác định bởi:
+
+$$\mathrm{PVE}_j
+=\frac{\lambda_j}{\sum_{k=1}^{9}\lambda_k}
+=\frac{\lambda_j}{9}.$$
+
+Tỷ lệ phương sai giải thích tích lũy của $m$ thành phần đầu tiên là:
+
+$$\mathrm{CPVE}_m=\sum_{j=1}^{m}\mathrm{PVE}_j.$$
+
+**Scree plot**
+
+```{r ex511-scree, fig.width=8, fig.height=5}
+bar_centers_511 <- barplot(eigenvalues_511, names.arg = paste0("PC", seq_along(eigenvalues_511)),
+                           col = "lightsteelblue", border = NA, ylim = c(0, max(eigenvalues_511) * 1.2),
+                           xlab = "Thành phần chính", ylab = "Trị riêng",
+                           main = "Scree plot - PCA trên ma trận tương quan")
+
+lines(bar_centers_511, eigenvalues_511, type = "b", pch = 19, lwd = 2, col = "red")
+text(bar_centers_511, eigenvalues_511, labels = sprintf("%.2f", eigenvalues_511), pos = 3, cex = 0.8)
+
+legend("topright", legend = c("Trị riêng", "Xu hướng trị riêng"),
+       fill = c("lightsteelblue", NA), border = NA,
+       col = c(NA, "steelblue4"), lty = c(NA, 1),
+       lwd = c(NA, 2), pch = c(NA, 19), bty = "n", cex = 0.85)
+```
+
+Scree plot cho thấy trị riêng giảm mạnh từ PC1 đến PC2, sau đó giảm dần với tốc độ chậm hơn. Trong đó, PC1 có trị riêng lớn nhất ($\lambda_1=4.19$), cho thấy thành phần này giải thích phần lớn sự biến thiên của dữ liệu. Sau các thành phần chính đầu tiên, trị riêng giảm dần và đường Scree plot có xu hướng phẳng hơn. Kết hợp với tỷ lệ phương sai tích lũy khoảng 90% tại PC5, việc giữ lại năm thành phần chính đầu tiên là phù hợp để tiếp tục phân tích và diễn giải.
+
+### Lựa chọn số thành phần chính
+
+Số thành phần chính cần giữ lại được đánh giá dựa trên tỷ lệ phương sai giải thích tích lũy (CPVE) và biểu đồ Scree plot. Cụ thể, bài phân tích xác định số thành phần chính tối thiểu cần thiết để đạt các mức phương sai giải thích 70%, 80% và 90%.
+
+```{r ex511-selection-basic}
+n_cpve70_511 <- which(cpve_511 >= 0.70)[1]
+n_cpve80_511 <- which(cpve_511 >= 0.80)[1]
+n_cpve90_511 <- which(cpve_511 >= 0.90)[1]
+
+selection_basic_511 <- data.frame(
+  Criterion = c("CPVE >= 70%", "CPVE >= 80%", "CPVE >= 90%"),
+  Number_of_PCs = c(n_cpve70_511, n_cpve80_511, n_cpve90_511)
+)
+
+knitr::kable(selection_basic_511, format = "html", row.names = FALSE,
+             caption = "Số thành phần chính theo tỷ lệ phương sai tích lũy") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 12)
+
+pc_labels_511 <- paste0("PC", seq_along(pve_511))
+pve_pct_511 <- 100 * pve_511
+cpve_pct_511 <- 100 * cpve_511
+
+bar_centers_511 <- barplot(pve_pct_511, names.arg = pc_labels_511,
+                           col = "lightsteelblue", border = NA, ylim = c(0, 105),
+                           xlab = "Thành phần chính", ylab = "Phương sai giải thích (%)",
+                           main = "Tỷ lệ phương sai giải thích và phương sai tích lũy")
+
+abline(h = c(70, 80, 90), col = c("#D4A24C", "#C77C59", "#B85C5C"), lty = 2, lwd = 1.2)
+lines(bar_centers_511, cpve_pct_511, type = "b", pch = 19, lwd = 2, col = "steelblue4")
+
+text(bar_centers_511, pve_pct_511, labels = sprintf("%.1f%%", pve_pct_511), pos = 3, cex = 0.75)
+text(bar_centers_511, cpve_pct_511, labels = sprintf("%.1f%%", cpve_pct_511),
+     pos = 3, cex = 0.75, col = "steelblue4", offset = 0.5)
+
+legend("right", inset = c(0.01, 0.08),
+       legend = c("PVE", "CPVE", "70%", "80%", "90%"),
+       fill = c("lightsteelblue", NA, NA, NA, NA), border = NA,
+       col = c(NA, "steelblue4", "#D4A24C", "#C77C59", "#B85C5C"),
+       lty = c(NA, 1, 2, 2, 2), pch = c(NA, 19, NA, NA, NA),
+       bty = "n", cex = 0.8)
+```
+
+Ba thành phần đầu giải thích khoảng 74,6% tổng phương sai, bốn thành phần đầu giải thích khoảng 83,3%. Khi giữ lại năm thành phần chính, tỷ lệ phương sai tích lũy đạt khoảng 90%, cho thấy phần lớn sự biến thiên của dữ liệu được bảo toàn. Do đó, năm thành phần chính đầu tiên được lựa chọn để tiếp tục phân tích và diễn giải.
+
+### Độ nhạy của PCA đối với việc xử lý ngoại lai
+
+Việc loại bỏ bốn quan sát 25, 34, 69 và 72 có thể làm thay đổi cấu trúc tương quan giữa các biến. Vì vậy, PCA được thực hiện trên cả dữ liệu ban đầu ($n=76$) và dữ liệu sau xử lý ngoại lai ($n=72$) để đánh giá mức độ ảnh hưởng của quyết định xử lý dữ liệu.
+
+Trong cả hai trường hợp, PCA được thực hiện trên ma trận tương quan mẫu nhằm bảo đảm các biến được chuẩn hóa trước khi phân tích. Việc so sánh tập trung vào trị riêng, tỷ lệ phương sai giải thích và hướng của các vector riêng.
+
+**So sánh trị riêng và phương sai giải thích**
+
+```{r ex511-sensitivity-pve}
+pca_raw_511 <- prcomp(data_511, center = TRUE, scale. = TRUE)
+eigen_raw_511 <- pca_raw_511$sdev^2
+pve_raw_511 <- eigen_raw_511 / sum(eigen_raw_511)
+cpve_raw_511 <- cumsum(pve_raw_511)
+
+sens_511 <- data.frame(
+  PC = paste0("PC", seq_along(eigenvalues_511)),
+  Eigen_Original = eigen_raw_511,
+  Eigen_Clean = eigenvalues_511,
+  PVE_Original = 100 * pve_raw_511,
+  PVE_Clean = 100 * pve_511,
+  Difference_pp = 100 * (pve_511 - pve_raw_511)
+)
+
+knitr::kable(sens_511, format = "html", digits = 3, row.names = FALSE,
+             caption = "So sánh trị riêng và PVE trước và sau xử lý ngoại lai") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 11)
+
+cpve_compare_511 <- data.frame(
+  Dataset = c("Dữ liệu ban đầu (n = 76)", "Sau xử lý ngoại lai (n = 72)"),
+  CPVE_3 = 100 * c(cpve_raw_511[3], cpve_511[3]),
+  CPVE_5 = 100 * c(cpve_raw_511[5], cpve_511[5])
+)
+
+knitr::kable(cpve_compare_511, format = "html", digits = 3, row.names = FALSE,
+             caption = "So sánh phương sai tích lũy của ba và năm thành phần chính đầu tiên") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 12)
+```
+
+Kết quả cho thấy tỷ lệ phương sai giải thích của PC1 tăng nhẹ từ 46,05% lên 46,50% sau khi xử lý ngoại lai. Trong khi đó, PC2 có mức tăng lớn nhất, từ 13,738% lên 15,979%, tương ứng 2,241 điểm phần trăm. Ngược lại, PVE của PC4 và PC6 giảm lần lượt 1,430 và 1,537 điểm phần trăm.
+
+Xét năm thành phần chính đầu tiên, tỷ lệ phương sai giải thích tích lũy tăng từ khoảng 88,50% lên 90,04%. Như vậy, việc loại bỏ bốn quan sát cực trị không làm thay đổi đáng kể khả năng giải thích tổng phương sai của năm thành phần chính đầu tiên. Tuy nhiên, sự ổn định về tỷ lệ phương sai giải thích không đồng nghĩa với sự ổn định về hướng của các thành phần chính, do đó cần tiếp tục xem xét mức độ tương đồng giữa các vector riêng trước và sau xử lý ngoại lai.
+
+```{r ex511-sensitivity-plot, fig.width=8, fig.height=5}
+matplot(seq_along(eigenvalues_511), cbind(100 * pve_raw_511, 100 * pve_511),
+        type = "b", pch = c(19, 17), lty = c(1, 2), lwd = 2,
+        col = c("firebrick", "steelblue"), xaxt = "n",
+        xlab = "Thành phần chính", ylab = "Phương sai giải thích (%)",
+        main = "PVE trước và sau xử lý ngoại lai")
+
+axis(1, at = seq_along(eigenvalues_511),
+     labels = paste0("PC", seq_along(eigenvalues_511)))
+
+legend("topright", legend = c("Dữ liệu ban đầu (n = 76)", "Sau xử lý (n = 72)"),
+       col = c("firebrick", "steelblue"), pch = c(19, 17),
+       lty = c(1, 2), lwd = 2, bty = "n")
+```
+
+**So sánh hướng của các thành phần chính**
+
+Ngoài tỷ lệ phương sai giải thích, hướng của các vector riêng cũng được so sánh để đánh giá mức độ ổn định của PCA.
+
+Với hai vector riêng đơn vị $\mathbf{a}$ và $\mathbf{b}$, mức độ tương đồng về hướng được xác định bằng:
+
+$$s(\mathbf{a},\mathbf{b})=\left|\mathbf{a}^{\top}\mathbf{b}\right|.$$
+
+Giá trị gần 1 cho thấy hai vector có hướng gần trùng nhau, trong khi giá trị gần 0 cho thấy chúng gần trực giao. Việc lấy trị tuyệt đối giúp loại bỏ sự khác biệt về dấu của vector riêng, vì đổi dấu vector riêng không làm thay đổi thành phần chính về mặt phương sai giải thích.
+
+```{r ex511-sensitivity-directions}
+direction_similarity_511 <- sapply(seq_along(eigenvalues_511), function(j) {
+  abs(sum(pca_raw_511$rotation[, j] * pca_511$rotation[, j]))
+})
+
+direction_table_511 <- data.frame(
+  PC = paste0("PC", seq_along(eigenvalues_511)),
+  Absolute_Dot_Product = direction_similarity_511
+)
+
+knitr::kable(direction_table_511, format = "html", digits = 4, row.names = FALSE,
+             caption = "Mức độ tương đồng về hướng của các thành phần chính trước và sau xử lý") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 12)
+```
+
+Kết quả cho thấy PC1 có độ tương đồng rất cao (0,9849), cho thấy hướng của thành phần này gần như được bảo toàn sau khi loại bỏ ngoại lai. PC3 có độ tương đồng 0,7010, trong khi PC2, PC4 và PC5 có giá trị lần lượt là 0,4087; 0,3391 và 0,3007, phản ánh sự thay đổi đáng kể về hướng của các vector riêng tương ứng.
+
+**Kết luận về độ nhạy**
+
+Kết quả cho thấy việc xử lý ngoại lai không làm thay đổi đáng kể tỷ lệ phương sai giải thích của các thành phần chính đầu tiên. Tuy nhiên, mức độ tương đồng về hướng của một số vector riêng tương đối thấp, cho thấy cấu trúc các thành phần có thể nhạy với việc loại bỏ quan sát cực trị. Vì vậy, kết quả PCA trên dữ liệu sau xử lý được sử dụng cho các bước phân tích tiếp theo.
+
+### Tổng hợp ảnh hưởng của xử lý ngoại lai
+
+```{r ex511-sensitivity-summary}
+sensitivity_summary_511 <- data.frame(
+  Indicator = c(
+    "Số quan sát ban đầu",
+    "Số quan sát sau xử lý",
+    "Số quan sát loại bỏ",
+    "PVE của PC1 trước xử lý (%)",
+    "PVE của PC1 sau xử lý (%)",
+    "CPVE của PC1-PC2 trước xử lý (%)",
+    "CPVE của PC1-PC2 sau xử lý (%)",
+    "Độ tương đồng hướng PC1",
+    "Độ tương đồng hướng PC2"
+  ),
+  Value = c(
+    nrow(data_511),
+    nrow(data_clean_511),
+    nrow(data_511) - nrow(data_clean_511),
+    100 * pve_raw_511[1],
+    100 * pve_511[1],
+    100 * sum(pve_raw_511[1:2]),
+    100 * sum(pve_511[1:2]),
+    direction_similarity_511[1],
+    direction_similarity_511[2]
+  )
+)
+
+knitr::kable(
+  sensitivity_summary_511,
+  format = "html",
+  digits = 4,
+  row.names = FALSE,
+  caption = "Tổng hợp ảnh hưởng của việc xử lý ngoại lai đến PCA"
+) |>
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "center",
+    font_size = 12
+  )
+```
+
+Kết quả phân tích độ nhạy sẽ được sử dụng để đánh giá mức độ thay đổi của các thành phần chính khi loại bỏ những quan sát cực trị. Việc so sánh này giúp làm rõ ảnh hưởng của bước tiền xử lý, thay vì mặc nhiên cho rằng loại ngoại lai luôn cải thiện kết quả PCA.
+
+## (c) Diễn giải năm thành phần chính đầu tiên
+
+Năm thành phần chính đầu tiên được phân tích thông qua hệ số vector riêng, tương quan với các biến ban đầu, mức đóng góp của từng biến và chất lượng biểu diễn. Mục tiêu là xác định liệu các thành phần chính có phản ánh được những đặc điểm liên quan đến quy mô nông hộ, diện tích canh tác, số lượng vật nuôi và khoảng cách đến đường giao thông hay không.
+
+Việc diễn giải được thực hiện trên bộ dữ liệu sau xử lý ngoại lai gồm 72 quan sát, sử dụng kết quả PCA trên ma trận tương quan mẫu ở câu (b).
+
+### Eigenvectors, correlation loadings, contribution và cos²
+
+#### Hệ số vector riêng và công thức các thành phần chính
+
+Với các biến đã chuẩn hóa, thành phần chính thứ $j$ được biểu diễn dưới dạng:
+
+$$PC_j=\sum_{i=1}^{9}e_{ij}Z_i,\qquad j=1,\ldots,5,$$
+
+trong đó $e_{ij}$ là hệ số thứ $i$ của vector riêng tương ứng với thành phần chính thứ $j$, còn $Z_i$ là biến gốc đã chuẩn hóa.
+
+```{r ex511-eigenvectors}
+eigenvectors_511 <- pca_511$rotation[, 1:5, drop = FALSE]
+
+knitr::kable(eigenvectors_511, format = "html", digits = 4,
+             caption = "Hệ số vector riêng của PC1–PC5") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 12)
+```
+
+Để thể hiện rõ cách hình thành từng thành phần chính, các hệ số được sử dụng để xây dựng công thức tổ hợp tuyến tính của PC1–PC5.
+
+
+\[
+\begin{aligned}
+PC_1 ={}&
+0.434Z_{\mathrm{Family}}
++0.008Z_{\mathrm{DistRd}}
++0.446Z_{\mathrm{Cotton}}\\
+&+0.352Z_{\mathrm{Maize}}
++0.204Z_{\mathrm{Sorg}}
++0.240Z_{\mathrm{Millet}}\\
+&+0.445Z_{\mathrm{Bull}}
++0.355Z_{\mathrm{Cattle}}
++0.255Z_{\mathrm{Goats}}
+\end{aligned}
+\]
+
+\[
+\begin{aligned}
+PC_2 ={}&
+0.065Z_{\mathrm{Family}}
+-0.497Z_{\mathrm{DistRd}}
+-0.009Z_{\mathrm{Cotton}}\\
+&-0.353Z_{\mathrm{Maize}}
++0.604Z_{\mathrm{Sorg}}
++0.415Z_{\mathrm{Millet}}\\
+&-0.068Z_{\mathrm{Bull}}
+-0.284Z_{\mathrm{Cattle}}
++0.049Z_{\mathrm{Goats}}
+\end{aligned}
+\]
+
+\[
+\begin{aligned}
+PC_3 ={}&
+-0.098Z_{\mathrm{Family}}
++0.569Z_{\mathrm{DistRd}}
+-0.132Z_{\mathrm{Cotton}}\\
+&-0.388Z_{\mathrm{Maize}}
++0.111Z_{\mathrm{Sorg}}
++0.116Z_{\mathrm{Millet}}\\
+&+0.030Z_{\mathrm{Bull}}
+-0.014Z_{\mathrm{Cattle}}
++0.687Z_{\mathrm{Goats}}
+\end{aligned}
+\]
+
+\[
+\begin{aligned}
+PC_4 ={}&
+0.171Z_{\mathrm{Family}}
++0.496Z_{\mathrm{DistRd}}
+-0.027Z_{\mathrm{Cotton}}\\
+&+0.240Z_{\mathrm{Maize}}
+-0.059Z_{\mathrm{Sorg}}
++0.616Z_{\mathrm{Millet}}\\
+&-0.146Z_{\mathrm{Bull}}
+-0.373Z_{\mathrm{Cattle}}
+-0.351Z_{\mathrm{Goats}}
+\end{aligned}
+\]
+
+\[
+\begin{aligned}
+PC_5 ={}&
+-0.011Z_{\mathrm{Family}}
++0.378Z_{\mathrm{DistRd}}
++0.219Z_{\mathrm{Cotton}}\\
+&+0.079Z_{\mathrm{Maize}}
++0.645Z_{\mathrm{Sorg}}
+-0.527Z_{\mathrm{Millet}}\\
+&+0.028Z_{\mathrm{Bull}}
+-0.218Z_{\mathrm{Cattle}}
+-0.249Z_{\mathrm{Goats}}
+\end{aligned}
+\]
+
+
+Kết quả cho thấy **PC1** có các hệ số dương tương đối lớn ở Cotton (0,4461), Bull (0,4453) và Family (0,4338), gợi ý một hướng biến thiên chung liên quan đến quy mô hoạt động nông nghiệp. Trong khi đó, **PC2–PC5** có sự kết hợp giữa các hệ số dương và âm, phản ánh những hướng tương phản giữa các đặc điểm canh tác, chăn nuôi và khoảng cách đến đường giao thông.
+
+Đáng chú ý, DistRd có hệ số gần bằng 0 ở PC1 nhưng nổi bật hơn ở các thành phần tiếp theo. Những kết quả này bước đầu cho thấy mỗi thành phần chính phản ánh một cấu trúc biến thiên khác nhau. Ý nghĩa cụ thể của từng thành phần sẽ được phân tích sâu hơn thông qua correlation loadings, contribution và cos² ở các mục tiếp theo.
+
+#### Tương quan giữa biến gốc và thành phần chính
+
+Để đánh giá mối liên hệ giữa từng biến ban đầu và các thành phần chính, hệ số tương quan được tính theo:
+
+$$\operatorname{corr}(Z_i,PC_j)=\sqrt{\lambda_j}\,e_{ij}.$$
+
+Trong đó $\lambda_j$ là trị riêng tương ứng với thành phần chính thứ $j$.
+
+```{r ex511-loadings}
+cor_loadings_511 <- sweep(eigenvectors_511, 2, pca_511$sdev[1:5], `*`)
+
+knitr::kable(cor_loadings_511, format = "html", digits = 4,
+             caption = "Tương quan giữa các biến ban đầu và PC1–PC5") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 12)
+```
+
+PC1 có tương quan dương mạnh với Cotton (0,9127), Bull (0,9109), Family (0,8875), Cattle (0,7271) và Maize (0,7206), cho thấy thành phần này phản ánh **xu hướng biến thiên đồng thời của quy mô canh tác, chăn nuôi và gia đình**. Ngược lại, DistRd gần như không tương quan với PC1 (0,0155), cho thấy khoảng cách đến đường không đóng vai trò đáng kể trong hướng biến thiên chính của dữ liệu.
+
+Đối với các thành phần còn lại, PC2 thể hiện sự tương phản giữa Sorg, Millet với DistRd và Maize; PC3 nổi bật với Goats và DistRd; PC4 phản ánh sự đối lập giữa Millet, DistRd với Cattle, Goats; trong khi PC5 chủ yếu thể hiện sự tương phản giữa Sorg và Millet. Như vậy, **PC1 đại diện tương đối rõ cho quy mô hoạt động nông nghiệp tổng hợp, còn PC2–PC5 phản ánh những khác biệt về cơ cấu sản xuất và đặc điểm giao thông**, thay vì các thước đo quy mô đơn thuần.
+
+
+```{r ex511-loading-heatmap, fig.width=8, fig.height=6}
+corrplot::corrplot(cor_loadings_511, is.corr = FALSE, method = "color",
+                   col = colorRampPalette(c("#B85C5C", "white", "#3F7EAD"))(200),
+                   col.lim = c(-1, 1), addCoef.col = "black", number.cex = 0.75,
+                   tl.col = "black", tl.cex = 0.9, tl.srt = 0,
+                   cl.pos = "r", mar = c(1, 1, 2, 1),
+                   title = "Correlation loadings: PC1–PC5")
+```
+
+#### Đóng góp của từng biến vào thành phần chính (contribution)
+
+Đóng góp của biến thứ $i$ vào thành phần chính thứ $j$ được xác định bởi:
+
+$$\operatorname{Contribution}_{ij}=100e_{ij}^{2}.$$
+
+Tổng contribution của tất cả các biến trong mỗi thành phần chính bằng 100%.
+
+```{r ex511-contribution}
+contrib_511 <- 100 * eigenvectors_511^2
+
+knitr::kable(contrib_511, format = "html", digits = 2,
+             caption = "Contribution (%) của từng biến vào PC1–PC5") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 12)
+```
+
+```{r ex511-contrib-plot, fig.width=11, fig.height=7}
+op_511 <- par(mfrow = c(2, 3), mar = c(7, 3.5, 2.5, 1))
+
+for (j in seq_len(5)) {
+  barplot(contrib_511[, j], names.arg = rownames(contrib_511),
+          las = 2, cex.names = 0.7, col = "lightsteelblue",
+          border = NA, ylab = "Contribution (%)",
+          main = paste0("PC", j),
+          ylim = c(0, max(contrib_511) * 1.1))
+  abline(h = 100 / nrow(contrib_511), lty = 2, col = "firebrick")
+}
+
+par(op_511)
+```
+
+#### Chất lượng biểu diễn của từng biến (cos²)
+
+Chất lượng biểu diễn của biến $i$ trên thành phần chính $j$ được xác định bằng:
+
+$$\cos^2_{ij}=\operatorname{corr}(Z_i,PC_j)^2
+=\lambda_j e_{ij}^{2}.$$
+
+Tổng cos² qua năm thành phần đầu cho biết tỷ lệ phương sai của mỗi biến chuẩn hóa được biểu diễn bởi không gian PC1–PC5:
+
+$$Q_i=\sum_{j=1}^{5}\cos^2_{ij}.$$
+
+```{r ex511-cos2}
+cos2_511 <- cor_loadings_511^2
+
+cos2_table_511 <- data.frame(
+  Variable = rownames(cos2_511),
+  cos2_511,
+  Total_PC1_PC5 = rowSums(cos2_511),
+  row.names = NULL
+)
+
+knitr::kable(cos2_table_511, format = "html", digits = 3, row.names = FALSE,
+             caption = "Cos² và chất lượng biểu diễn của từng biến trên PC1–PC5") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 12)
+```
+
+Kết quả cos² cho thấy PC1 biểu diễn tốt các biến Cotton (83,3%), Bull (83,0%) và Family (78,8%), củng cố nhận định rằng thành phần này phản ánh hướng biến thiên chung về quy mô hoạt động nông nghiệp. Trong khi đó, DistRd gần như không được biểu diễn bởi PC1 nhưng có phương sai phân bổ chủ yếu trên PC2–PC5, cho thấy đặc điểm khoảng cách giao thông được phản ánh bởi những hướng biến thiên khác.
+
+Xét tổng thể, năm thành phần chính đầu tiên biểu diễn được từ 78,4% đến 98,6% phương sai của từng biến. DistRd, Millet và Sorg có chất lượng biểu diễn cao nhất, trong khi Cattle thấp nhất. Như vậy, việc giữ lại năm PC không chỉ bảo toàn khoảng 90% tổng phương sai của dữ liệu mà còn duy trì chất lượng biểu diễn tương đối tốt đối với cả chín biến ban đầu.
+
+### Bản đồ tương quan trên hai thành phần đầu tiên
+
+Để trực quan hóa mối quan hệ giữa các biến ban đầu, sử dụng vòng tròn tương quan trên mặt phẳng PC1–PC2. Hai thành phần này được lựa chọn vì giải thích tổng cộng 62,48% phương sai, là tỷ lệ lớn nhất trong các mặt phẳng tạo bởi hai thành phần chính. Do đó, mặt phẳng PC1–PC2 cung cấp cái nhìn tổng quát về cấu trúc tương quan chủ yếu của dữ liệu. Tuy nhiên, biểu đồ chỉ phản ánh thông tin trên hai thành phần đầu tiên; vai trò của PC3–PC5 tiếp tục được xem xét thông qua correlation loadings, contribution và cos².
+
+```{r ex511-variable-map, fig.width=7, fig.height=7}
+plot(NA, xlim = c(-1.12, 1.12), ylim = c(-1.12, 1.12), asp = 1,
+     xlab = paste0("PC1 (", sprintf("%.1f", 100 * pve_511[1]), "%)"),
+     ylab = paste0("PC2 (", sprintf("%.1f", 100 * pve_511[2]), "%)"),
+     main = "Correlation circle: PC1 và PC2")
+
+symbols(0, 0, circles = 1, inches = FALSE, add = TRUE, fg = "gray70")
+abline(h = 0, v = 0, col = "gray80", lty = 3)
+
+arrows(0, 0, cor_loadings_511[, 1], cor_loadings_511[, 2],
+       length = 0.08, col = "steelblue", lwd = 1.5)
+
+text(cor_loadings_511[, 1], cor_loadings_511[, 2],
+     labels = rownames(cor_loadings_511), pos = 3, cex = 0.8)
+```
+
+Trên mặt phẳng PC1–PC2, các vector Family, Cotton và Bull gần như cùng hướng, cho thấy mối tương quan dương mạnh giữa các biến này. Tương tự, Maize và Cattle có hướng tương đối gần nhau, trong khi Sorg và Millet cùng hướng về phía PC2 dương, gợi ý sự đồng biến giữa các đặc điểm canh tác tương ứng.
+
+Vector DistRd gần vuông góc với nhóm Family, Cotton và Bull, phản ánh mối tương quan yếu giữa khoảng cách đến đường và nhóm biến quy mô nông nghiệp. Đồng thời, DistRd tạo góc tù với Sorg và Millet, gợi ý xu hướng tương quan âm.
+
+Biplot các quan sát và biến
+
+```{r ex511-biplot, fig.width=9, fig.height=7}
+biplot(pca_511, choices = c(1, 2), scale = 0,
+       cex = c(0.55, 0.85), col = c("gray50", "firebrick"),
+       main = "PCA biplot: quan sát và hướng biến")
+```
+
+Biplot trên mặt phẳng PC1–PC2 cho thấy phần lớn các hộ nông nghiệp tập trung quanh vùng trung tâm, trong khi một số hộ phân bố xa hơn theo hai trục thành phần chính, phản ánh sự khác biệt về đặc điểm sản xuất. Các hộ nằm về phía PC1 dương có xu hướng gắn với các biến Family, Cotton và Bull, phù hợp với cách diễn giải PC1 là hướng biến thiên chung về quy mô hoạt động nông nghiệp. Trong khi đó, sự phân bố theo PC2 phản ánh sự khác biệt giữa nhóm biến Sorg, Millet và các biến như DistRd, Maize, Cattle.
+
+Như vậy, biplot không chỉ minh họa cấu trúc tương quan giữa các biến mà còn cho thấy sự khác biệt giữa các hộ nông nghiệp trên hai hướng biến thiên quan trọng nhất của dữ liệu. Tuy nhiên, mặt phẳng PC1–PC2 chỉ giải thích khoảng 62,48% tổng phương sai, nên chưa phản ánh đầy đủ toàn bộ sự khác biệt giữa các quan sát.S
+
+### Diễn giải ý nghĩa năm thành phần chính đầu tiên
+
+```{r ex511-interpretation}
+interpret_511 <- do.call(rbind, lapply(seq_len(5), function(j) {
+  idx <- order(abs(cor_loadings_511[, j]), decreasing = TRUE)[1:3]
+  data.frame(
+    PC = paste0("PC", j),
+    Eigenvalue = eigenvalues_511[j],
+    PVE_Percent = 100 * pve_511[j],
+    CPVE_Percent = 100 * cpve_511[j],
+    Leading_Variables = paste(rownames(cor_loadings_511)[idx], collapse = ", "),
+    Leading_Correlations = paste(sprintf("%+.2f", cor_loadings_511[idx, j]), collapse = ", ")
+  )
+}))
+
+knitr::kable(interpret_511, format = "html", digits = 2, row.names = FALSE,
+             caption = "Tổng hợp trị riêng, phương sai giải thích và các biến nổi bật của PC1–PC5") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "center", font_size = 11)
+```
+
+PC1 có tương quan dương mạnh với Cotton (0,91), Bull (0,91), Family (0,89), Cattle (0,73) và Maize (0,72). Các biến này thuộc ba nhóm đặc điểm khác nhau: canh tác (Cotton, Maize), chăn nuôi (Bull, Cattle) và quy mô gia đình (Family). Việc nhiều biến thuộc các nhóm này cùng có tương quan dương mạnh cho thấy PC1 phản ánh một **hướng biến thiên chung giữa các đặc điểm về quy mô nông hộ**, thay vì chỉ đại diện cho một loại hình sản xuất. Vì vậy, PC1 được diễn giải là *quy mô hoạt động nông nghiệp tổng hợp*. Các hộ có điểm PC1 cao có xu hướng có giá trị lớn hơn ở những biến trên. Ngược lại, DistRd gần như không tương quan với PC1 (0,02), cho thấy khoảng cách đến đường không phải yếu tố đặc trưng của thành phần này.
+
+PC2 có tương quan dương với Sorg (0,72), Millet (0,50), nhưng tương quan âm với DistRd (−0,60) và Maize (−0,42). Khác với PC1, các biến nổi bật ở PC2 không cùng biến thiên theo một hướng mà hình thành hai nhóm có dấu tương quan đối lập. Trong đó, Sorg và Millet thuộc nhóm canh tác nhưng có hướng biến thiên ngược với DistRd và Maize. Điều này cho thấy PC2 không phản ánh quy mô sản xuất chung mà chủ yếu **phân biệt các hộ theo sự khác nhau về đặc điểm cây trồng và khoảng cách đến đường**. Các hộ có điểm PC2 cao có xu hướng nổi bật hơn về Sorg, Millet và có giá trị DistRd, Maize thấp hơn.
+
+PC3 có tương quan dương mạnh với Goats (0,72) và DistRd (0,59), trong khi Maize có tương quan âm (−0,40). Hai biến Goats và DistRd nổi bật hơn các biến còn lại, cho thấy PC3 chủ yếu phản ánh sự biến thiên đồng thời của số lượng dê và khoảng cách đến đường, đối lập với đặc điểm canh tác Maize. Do đó, PC3 được diễn giải là **hướng tương phản giữa chăn nuôi dê, khoảng cách giao thông và canh tác ngô**. Các hộ có điểm PC3 cao có xu hướng nuôi nhiều dê hơn, ở xa đường hơn và có giá trị Maize thấp hơn.
+
+PC4 có tương quan dương với Millet (0,55), DistRd (0,44) và tương quan âm với Cattle (−0,33), Goats (−0,31). Các hệ số này cho thấy PC4 kết hợp những đặc điểm thuộc nhóm canh tác và giao thông theo một chiều, trong khi các biến chăn nuôi lại biến thiên theo chiều ngược lại. Vì vậy, PC4 được diễn giải là **hướng tương phản giữa đặc điểm canh tác Millet, khoảng cách đến đường và số lượng vật nuôi**, thay vì một thành phần phản ánh quy mô sản xuất tổng thể.
+
+PC5 có tương quan dương với Sorg (0,50) và tương quan âm với Millet (−0,41), trong khi DistRd có tương quan dương thấp hơn (0,29). Hai biến nổi bật nhất đều thuộc nhóm canh tác nhưng có dấu tương quan trái ngược, cho thấy PC5 chủ yếu phản ánh **sự tương phản giữa hai đặc điểm cây trồng Sorg và Millet**. Theo đó, các hộ có điểm PC5 cao có xu hướng có giá trị Sorg lớn hơn và Millet thấp hơn. Khoảng cách đến đường cũng có liên hệ với thành phần này nhưng không giữ vai trò nổi bật bằng hai biến canh tác.
+
+**Nhận xét tổng hợp**
+
+Năm thành phần chính đầu tiên giải thích 90,04% tổng phương sai của dữ liệu. Trong đó, PC1 phản ánh hướng biến thiên chung của nhiều đặc điểm liên quan đến quy mô nông hộ, còn PC2–PC5 chủ yếu thể hiện các hướng tương phản giữa hoạt động canh tác, chăn nuôi và khoảng cách giao thông.
+
+DistRd gần như không tương quan với PC1 nhưng có tương quan đáng kể với PC2, PC3 và PC4. Điều này cho thấy đặc điểm khoảng cách giao thông không nằm trong hướng biến thiên chung về quy mô nông nghiệp mà được phản ánh rõ hơn ở những thành phần tiếp theo.
+
+Như vậy, PCA không chỉ giúp giảm số chiều từ 9 biến xuống 5 thành phần, bảo toàn phần lớn phương sai của dữ liệu, mà còn cho phép nhận diện những hướng biến thiên khác nhau trong đặc điểm của các hộ nông nghiệp.

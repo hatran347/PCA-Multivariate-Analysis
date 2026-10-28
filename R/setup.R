@@ -2,7 +2,7 @@
 required_packages <- c(
   "here", "dplyr", "tidyr", "ggplot2",
   "corrplot", "psych", "FactoMineR",
-  "factoextra", "knitr", "readxl"
+  "factoextra", "knitr", "readxl","kableExtra"
 )
 
 missing_packages <- setdiff(
