@@ -4,6 +4,7 @@ output:
   html_document:
     toc: true
     toc_depth: 3
+    number_sections: true
 ---
 
 ```{r setup, include=FALSE}
@@ -11,9 +12,9 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 source(here::here("R", "setup.R"))
 ```
 
-# 0. Bối cảnh và đề bài
+## Giới thiệu và đề bài
 
-## 0.1 Bối cảnh
+### Bối cảnh
 
 Dữ liệu ghi nhận **suất sinh lợi theo tuần** (weekly rate of return) của **5 cổ phiếu niêm yết trên Sở giao dịch chứng khoán New York (NYSE)** trong **103 tuần liên tiếp, từ tháng 01/2004 đến tháng 12/2005**. Suất sinh lợi tuần được tính bằng
 
@@ -31,18 +32,18 @@ $$\text{suất sinh lợi tuần} = \frac{\text{giá đóng cửa tuần này} -
 
 Quan trắc giữa các tuần được xem là độc lập, nhưng suất sinh lợi của các cổ phiếu **trong cùng một tuần** tương quan với nhau, vì các cổ phiếu cùng phản ứng với tình hình kinh tế chung, và các cổ phiếu cùng ngành còn chịu chung các cú sốc của ngành. Vì vậy 5 biến chứa nhiều thông tin trùng lặp. Phân tích thành phần chính (PCA) được dùng để tìm một số ít tổ hợp tuyến tính không tương quan của 5 suất sinh lợi giải thích được phần lớn biến thiên, và xem các tổ hợp này phản ánh yếu tố gì (thị trường chung, ngành, hay riêng từng công ty).
 
-## 0.2 Đề bài
+### Câu hỏi đặt ra
 
 **Bài 5.7.** Dùng dữ liệu về suất sinh lợi/tuần khảo sát trong ví dụ 5.4 (dữ liệu stock-price).
 
-- (a) Xây dựng ma trận hiệp phương sai $\mathbf S$ và các thành phần chính tương ứng.
-- (b) Tính tỷ số đóng góp vào phương sai suy rộng của ba thành phần chính đầu tiên và giải thích ý nghĩa của nó.
-- (c) Xây dựng các khoảng tin cậy đồng thời Bonferroni 90% cho các phương sai $\lambda_1,\lambda_2,\lambda_3$ của ba thành phần chính đầu $Y_1, Y_2, Y_3$.
-- (d) Với kết quả trong các phần a–c, đánh giá xem dữ liệu có thể thu gọn xuống ít hơn 5 chiều không? Giải thích.
+- **(a)** Xây dựng ma trận hiệp phương sai $\mathbf S$ và các thành phần chính tương ứng.
+- **(b)** Tính tỷ số đóng góp vào phương sai suy rộng của ba thành phần chính đầu tiên và giải thích ý nghĩa của nó.
+- **(c)** Xây dựng các khoảng tin cậy đồng thời Bonferroni 90% cho các phương sai $\lambda_1,\lambda_2,\lambda_3$ của ba thành phần chính đầu $Y_1, Y_2, Y_3$.
+- **(d)** Với kết quả trong các phần a–c, đánh giá xem dữ liệu có thể thu gọn xuống ít hơn 5 chiều không? Giải thích.
 
-# 1. Dữ liệu
+## Dữ liệu và kiểm tra đầu vào
 
-## 1.1 Mô tả dữ liệu
+### Mô tả dữ liệu
 
 ```{r doc-du-lieu}
 stock <- read.table(file.path(data_dir, "EXo_5_7.DAT"), header = FALSE)
@@ -56,7 +57,7 @@ str(stock)
 head(stock)
 ```
 
-Dữ liệu có **n = `r n` quan trắc** (tuần) và **p = `r p` biến**, sắp theo thứ tự $x_1,\dots,x_5$ như bảng ở mục 0.1. Cả 5 biến đều là biến số liên tục (suất sinh lợi, không có đơn vị).
+Dữ liệu có **n = `r n` quan trắc** (tuần) và **p = `r p` biến**, sắp theo thứ tự $x_1,\dots,x_5$ như bảng ở mục Bối cảnh. Cả 5 biến đều là biến số liên tục (suất sinh lợi, không có đơn vị).
 
 ```{r thong-ke-mo-ta}
 summary(stock)
@@ -70,9 +71,9 @@ colSums(is.na(stock))
 
 Không có giá trị thiếu ở biến nào.
 
-## 1.2 Giá trị ngoại lai
+### Giá trị ngoại lai
 
-### Ngoại lai từng biến (boxplot)
+#### Ngoại lai từng biến (boxplot)
 
 ```{r boxplot, fig.width=8, fig.height=4}
 boxplot(stock, col = "lightblue", main = "Boxplot suất sinh lợi/tuần", ylab = "Suất sinh lợi")
@@ -81,7 +82,7 @@ abline(h = 0, lty = 2, col = "grey40")
 
 Hai cổ phiếu dầu lửa (Royal Dutch Shell, ExxonMobil) có hộp rộng hơn và râu dài hơn ba cổ phiếu ngân hàng → biến thiên lớn hơn. Có một vài điểm vượt râu ở từng biến, nhưng đó là các tuần thị trường biến động mạnh (dữ liệu thật), không phải lỗi nhập liệu.
 
-### Giá trị chuẩn hóa từng biến
+#### Giá trị chuẩn hóa từng biến
 
 Tính các giá trị chuẩn hóa $z_{jk}=(x_{jk}-\bar x_k)/\sqrt{s_{kk}}$, $j=1,\dots,n$, $k=1,\dots,5$. Với cỡ mẫu vừa phải, giá trị $|z_{jk}|>3.5$ được xem là lớn bất thường.
 
@@ -93,7 +94,7 @@ sum(abs(Z) > 3.5)
 
 Giá trị chuẩn hóa lớn nhất (trị tuyệt đối) của từng biến đều nhỏ hơn 3.5 (lớn nhất là `r round(max(abs(Z)), 3)`) → không có giá trị bất thường theo từng biến.
 
-### Khoảng cách tổng quát bình phương
+#### Khoảng cách Mahalanobis (khoảng cách tổng quát bình phương)
 
 Với mỗi quan trắc tính $d_j^2=(\mathbf x_j-\bar{\mathbf x})'\mathbf S^{-1}(\mathbf x_j-\bar{\mathbf x})$, $j=1,\dots,n$. Khi dữ liệu chuẩn $N_5$, $d_j^2$ xấp xỉ $\chi^2_5$, nên khoảng 5% số quan trắc sẽ có $d_j^2$ vượt phân vị $\chi^2_5(0.95)$ ngay cả khi không có ngoại lai; quan trắc ngoại lai được xác định bằng một phân vị cực trị hơn, ở đây dùng $\chi^2_5(0.995)$.
 
@@ -115,7 +116,7 @@ round(max(d2), 3)
 
 Có `r sum(d2 > nguong_95)` tuần có $d_j^2>\chi^2_5(0.95)=$ `r round(nguong_95, 2)`, gần với số kỳ vọng $0.05\times`r n`\approx$ `r round(0.05*n, 1)` tuần. Không có tuần nào vượt $\chi^2_5(0.995)=$ `r round(nguong_995, 2)` ($d_j^2$ lớn nhất là `r round(max(d2), 2)`) → **không có quan trắc ngoại lai**; dùng toàn bộ `r n` quan trắc để xây dựng $\mathbf S$.
 
-## 1.3 Giả định chuẩn nhiều chiều (cần cho câu c)
+### Giả định chuẩn nhiều chiều (cần cho câu c)
 
 Khoảng tin cậy cho $\lambda_i$ ở câu (c) giả định mẫu lấy từ $N_5(\boldsymbol\mu,\boldsymbol\Sigma)$. Ta kiểm tra bằng đồ thị chi bình phương (chi-square plot): sắp xếp $d^2_{(1)}\le\dots\le d^2_{(n)}$ và vẽ theo phân vị $\chi^2_5\big((j-\tfrac12)/n\big)$; nếu dữ liệu chuẩn, các điểm nằm gần đường thẳng $y=x$.
 
@@ -133,9 +134,9 @@ mean(d2 <= qchisq(0.5, df = p))
 
 Các điểm nằm khá sát đường thẳng đi qua gốc tọa độ với hệ số góc 1, không có dạng cong có hệ thống; chỉ vài điểm ở đuôi trên hơi lệch lên (các tuần biến động mạnh). Tỷ lệ $d_j^2\le\chi^2_5(0.5)$ là `r round(mean(d2 <= qchisq(0.5, df = p)), 3)`, gần 0.5. → Giả định chuẩn nhiều chiều **chấp nhận được ở mức xấp xỉ**; vì vậy các khoảng tin cậy ở câu (c) được hiểu là **khoảng xấp xỉ** (n = `r n` lớn).
 
-# 2. Độ lệch chuẩn và tương quan giữa các biến
+## Độ lệch chuẩn và tương quan giữa các biến
 
-## 2.1 Độ lệch chuẩn từng biến
+### Độ lệch chuẩn từng biến
 
 ```{r do-lech-chuan}
 s_kk <- diag(S)
@@ -144,7 +145,7 @@ round(sqrt(s_kk), 5)
 
 Độ lệch chuẩn của hai cổ phiếu dầu (≈ `r round(sqrt(s_kk[4]), 4)` và `r round(sqrt(s_kk[5]), 4)`) lớn hơn ba cổ phiếu ngân hàng (≈ `r round(sqrt(s_kk[3]), 4)` – `r round(sqrt(s_kk[2]), 4)`), nhưng cùng bậc độ lớn và **cùng đơn vị**, không bị quá chênh lệch → làm PCA trên $\mathbf S$ (như đề yêu cầu), không cần chuẩn hóa; các biến dầu sẽ có trọng số lớn hơn trong thành phần chính đầu vì phương sai lớn hơn.
 
-## 2.2 Ma trận tương quan mẫu R
+### Ma trận tương quan mẫu R
 
 ```{r tuong-quan, fig.width=5, fig.height=5}
 D_can  <- diag(1 / sqrt(s_kk))          # D^{-1/2}
@@ -157,11 +158,11 @@ corrplot::corrplot(R, method = "color", type = "upper", addCoef.col = "black",
 
 Ba cổ phiếu ngân hàng tương quan với nhau khá cao (0.51–0.63), hai cổ phiếu dầu tương quan với nhau cao nhất (0.68), còn tương quan chéo ngân hàng–dầu thấp (0.11–0.32) → có **hai nhóm biến** rõ rệt. Các biến tương quan dương đáng kể nên PCA có ý nghĩa.
 
-# 3. Câu (a): Ma trận S và các thành phần chính mẫu
+## Câu (a) — Ma trận S và các thành phần chính mẫu
 
-## 3.1 Vectơ trung bình mẫu và ma trận hiệp phương sai mẫu S
+### Vectơ trung bình mẫu và ma trận hiệp phương sai mẫu S
 
-$\bar{\mathbf x}=\frac1n\mathbf X'\mathbf 1$, $\quad\mathbf S=\frac{1}{n-1}(\mathbf X-\mathbf 1\bar{\mathbf x}')'(\mathbf X-\mathbf 1\bar{\mathbf x}')$ (đã tính ở mục 1.2).
+$\bar{\mathbf x}=\frac1n\mathbf X'\mathbf 1$, $\quad\mathbf S=\frac{1}{n-1}(\mathbf X-\mathbf 1\bar{\mathbf x}')'(\mathbf X-\mathbf 1\bar{\mathbf x}')$ (đã tính ở mục Giá trị ngoại lai).
 
 ```{r ma-tran-S}
 round(xbar, 7)
@@ -171,7 +172,7 @@ S
 
 $\bar{\mathbf x}'=$ (`r paste(sprintf("%.4f", xbar), collapse = ", ")`). Ma trận $\mathbf S$ có các phần tử rất nhỏ (bậc $10^{-4}$) vì suất sinh lợi tuần chỉ khoảng vài phần trăm. Trên đường chéo, $s_{44}=$ `r format(S[4,4], digits = 4)` và $s_{55}=$ `r format(S[5,5], digits = 4)` (dầu) lớn khoảng `r round(S[4,4]/S[1,1], 1)` lần $s_{11},s_{22}$ và khoảng `r round(S[4,4]/S[3,3], 1)` lần $s_{33}$ (ngân hàng).
 
-## 3.2 Các cặp trị riêng – vectơ riêng của S
+### Các cặp trị riêng – vectơ riêng của S
 
 ```{r tri-rieng}
 eig_S <- eigen(S)
@@ -194,7 +195,7 @@ round(t(V_hat) %*% S %*% V_hat, 10)
 
 Ma trận thứ nhất là $\mathbf I_5$, ma trận thứ hai là ma trận chéo với các phần tử chéo đúng bằng $\hat\lambda_i$ → các vectơ riêng trực chuẩn và chéo hóa $\mathbf S$.
 
-## 3.3 Các thành phần chính mẫu
+### Các thành phần chính mẫu
 
 Thành phần chính mẫu thứ $i$ là $\hat y_i=\hat{\mathbf v}_i'\mathbf x=\hat v_{i1}x_1+\hat v_{i2}x_2+\dots+\hat v_{i5}x_5$, với $\text{var}(\hat y_i)=\hat\lambda_i$ và $\text{cov}(\hat y_i,\hat y_k)=0$, $i\ne k$:
 
@@ -223,7 +224,7 @@ round(t(Y_hat) %*% Y_hat / (n - 1), 10)
 
 Ma trận hiệp phương sai của các scores là ma trận chéo $\text{diag}(\hat\lambda_1,\dots,\hat\lambda_5)$ → đúng $\text{var}(\hat y_k)=\hat\lambda_k$ và $\text{cov}(\hat y_i,\hat y_k)=0$, $i\ne k$.
 
-## 3.4 Hệ số tương quan giữa thành phần chính và biến gốc
+### Hệ số tương quan giữa thành phần chính và biến gốc
 
 Hệ số $\hat v_{ik}$ cho biết **trọng số** của biến $x_k$ trong $\hat y_i$, nhưng độ lớn của nó còn phụ thuộc vào thang đo của $x_k$. Để đánh giá mức độ đóng góp của từng biến vào một thành phần chính, ta dùng thêm hệ số tương quan mẫu giữa $\hat y_i$ và $x_k$:
 
@@ -237,7 +238,7 @@ for (i in 1:p) {
 round(r_y_x, 3)
 ```
 
-### Tính chi tiết cho hai thành phần chính đầu
+#### Tính chi tiết cho hai thành phần chính đầu
 
 Với $\sqrt{\hat\lambda_1}=\sqrt{`r format(lambda_hat[1], digits = 5)`}=$ `r round(sqrt(lambda_hat[1]), 5)` và $\sqrt{\hat\lambda_2}=\sqrt{`r format(lambda_hat[2], digits = 5)`}=$ `r round(sqrt(lambda_hat[2]), 5)`:
 
@@ -256,29 +257,29 @@ r_{\hat y_2,x_5} &= \frac{`r round(V_hat[5,2],4)`\times`r round(sqrt(lambda_hat[
 \end{aligned}
 $$
 
-### Thành phần chính thứ nhất $\hat y_1$
+#### Thành phần chính thứ nhất $\hat y_1$
 
-Trọng số của các biến trong $\hat y_1$ lần lượt là $\hat v_{11}\approx$ `r round(V_hat[1,1],2)`, $\hat v_{12}\approx$ `r round(V_hat[2,1],2)`, $\hat v_{13}\approx$ `r round(V_hat[3,1],2)`, $\hat v_{14}\approx$ `r round(V_hat[4,1],2)`, $\hat v_{15}\approx$ `r round(V_hat[5,1],2)`: cả 5 cùng dấu, trong đó trọng số của $x_4$ (Royal Dutch Shell) và $x_5$ (ExxonMobil) lớn gấp 2–4 lần trọng số của ba ngân hàng. Hệ số tương quan cho cùng kết luận:
+Trọng số của các biến trong $\hat y_1$ lần lượt là $\hat v_{11}\approx$ `r sprintf("%.2f", V_hat[1,1])`, $\hat v_{12}\approx$ `r sprintf("%.2f", V_hat[2,1])`, $\hat v_{13}\approx$ `r sprintf("%.2f", V_hat[3,1])`, $\hat v_{14}\approx$ `r sprintf("%.2f", V_hat[4,1])`, $\hat v_{15}\approx$ `r sprintf("%.2f", V_hat[5,1])`: cả 5 cùng dấu, trong đó trọng số của $x_4$ (Royal Dutch Shell) và $x_5$ (ExxonMobil) lớn gấp 2–4 lần trọng số của ba ngân hàng. Hệ số tương quan cho cùng kết luận:
 
-- $r_{\hat y_1,x_4}\approx$ `r round(r_y_x[4,1],2)` và $r_{\hat y_1,x_5}\approx$ `r round(r_y_x[5,1],2)`: tương quan **rất mạnh** — $\hat y_1$ gần như đi cùng với suất sinh lợi của hai cổ phiếu dầu.
-- $r_{\hat y_1,x_2}\approx$ `r round(r_y_x[2,1],2)` (Citibank), $r_{\hat y_1,x_1}\approx$ `r round(r_y_x[1,1],2)` (JP Morgan), $r_{\hat y_1,x_3}\approx$ `r round(r_y_x[3,1],2)` (Wells Fargo): tương quan **dương, mức trung bình**.
+- $r_{\hat y_1,x_4}\approx$ `r sprintf("%.2f", r_y_x[4,1])` và $r_{\hat y_1,x_5}\approx$ `r sprintf("%.2f", r_y_x[5,1])`: tương quan **rất mạnh** — $\hat y_1$ gần như đi cùng với suất sinh lợi của hai cổ phiếu dầu.
+- $r_{\hat y_1,x_2}\approx$ `r sprintf("%.2f", r_y_x[2,1])` (Citibank), $r_{\hat y_1,x_1}\approx$ `r sprintf("%.2f", r_y_x[1,1])` (JP Morgan), $r_{\hat y_1,x_3}\approx$ `r sprintf("%.2f", r_y_x[3,1])` (Wells Fargo): tương quan **dương, mức trung bình**.
 
 Cả 5 tương quan đều cùng dấu dương, nên khi $\hat y_1$ tăng thì suất sinh lợi của cả 5 cổ phiếu đều có xu hướng tăng. Kết hợp hai nhận xét trên, $\hat y_1$ là **thành phần thị trường** (5 cổ phiếu cùng biến động), nhưng **chủ yếu phụ thuộc vào hai biến $x_4$ và $x_5$** (cổ phiếu dầu), do hai biến này có phương sai lớn nhất trong $\mathbf S$.
 
-### Thành phần chính thứ hai $\hat y_2$
+#### Thành phần chính thứ hai $\hat y_2$
 
-Trọng số của ba ngân hàng là $\hat v_{21}\approx$ `r round(V_hat[1,2],2)`, $\hat v_{22}\approx$ `r round(V_hat[2,2],2)`, $\hat v_{23}\approx$ `r round(V_hat[3,2],2)`, ngược dấu với trọng số của hai cổ phiếu dầu $\hat v_{24}\approx$ `r round(V_hat[4,2],2)`, $\hat v_{25}\approx$ `r round(V_hat[5,2],2)`. Hệ số tương quan:
+Trọng số của ba ngân hàng là $\hat v_{21}\approx$ `r sprintf("%.2f", V_hat[1,2])`, $\hat v_{22}\approx$ `r sprintf("%.2f", V_hat[2,2])`, $\hat v_{23}\approx$ `r sprintf("%.2f", V_hat[3,2])`, ngược dấu với trọng số của hai cổ phiếu dầu $\hat v_{24}\approx$ `r sprintf("%.2f", V_hat[4,2])`, $\hat v_{25}\approx$ `r sprintf("%.2f", V_hat[5,2])`. Hệ số tương quan:
 
-- $r_{\hat y_2,x_1}\approx$ `r round(r_y_x[1,2],2)`, $r_{\hat y_2,x_2}\approx$ `r round(r_y_x[2,2],2)`, $r_{\hat y_2,x_3}\approx$ `r round(r_y_x[3,2],2)`: tương quan **mạnh** với cả ba ngân hàng, mạnh nhất là JP Morgan.
-- $r_{\hat y_2,x_4}\approx$ `r round(r_y_x[4,2],2)`, $r_{\hat y_2,x_5}\approx$ `r round(r_y_x[5,2],2)`: tương quan **yếu và ngược dấu** với hai cổ phiếu dầu.
+- $r_{\hat y_2,x_1}\approx$ `r sprintf("%.2f", r_y_x[1,2])`, $r_{\hat y_2,x_2}\approx$ `r sprintf("%.2f", r_y_x[2,2])`, $r_{\hat y_2,x_3}\approx$ `r sprintf("%.2f", r_y_x[3,2])`: tương quan **mạnh** với cả ba ngân hàng, mạnh nhất là JP Morgan.
+- $r_{\hat y_2,x_4}\approx$ `r sprintf("%.2f", r_y_x[4,2])`, $r_{\hat y_2,x_5}\approx$ `r sprintf("%.2f", r_y_x[5,2])`: tương quan **yếu và ngược dấu** với hai cổ phiếu dầu.
 
 Như vậy $\hat y_2$ **chủ yếu phụ thuộc vào ba biến ngân hàng $x_1,x_2,x_3$** và có dấu ngược với nhóm dầu: $\hat y_2$ lớn khi ngân hàng tăng mạnh hơn dầu, nhỏ khi ngược lại → **thành phần ngành**. Điều này bổ sung cho $\hat y_1$: $\hat y_1$ chủ yếu "đại diện" cho nhóm dầu, còn $\hat y_2$ đại diện cho nhóm ngân hàng.
 
-### Thành phần chính thứ ba $\hat y_3$
+#### Thành phần chính thứ ba $\hat y_3$
 
-$r_{\hat y_3,x_4}\approx$ `r round(r_y_x[4,3],2)` và $r_{\hat y_3,x_5}\approx$ `r round(r_y_x[5,3],2)` ngược dấu nhau, các tương quan còn lại nhỏ (`r round(r_y_x[1,3],2)`, `r round(r_y_x[2,3],2)`, `r round(r_y_x[3,3],2)`). Mọi tương quan đều ở mức yếu (|r| < 0.4) → $\hat y_3$ chỉ phản ánh **sự khác biệt giữa hai cổ phiếu dầu**, không đại diện tốt cho biến nào.
+$r_{\hat y_3,x_4}\approx$ `r sprintf("%.2f", r_y_x[4,3])` và $r_{\hat y_3,x_5}\approx$ `r sprintf("%.2f", r_y_x[5,3])` ngược dấu nhau, các tương quan còn lại nhỏ (`r sprintf("%.2f", r_y_x[1,3])`, `r sprintf("%.2f", r_y_x[2,3])`, `r sprintf("%.2f", r_y_x[3,3])`). Mọi tương quan đều ở mức yếu (|r| < 0.4) → $\hat y_3$ chỉ phản ánh **sự khác biệt giữa hai cổ phiếu dầu**, không đại diện tốt cho biến nào.
 
-### So sánh hệ số $\hat v_{ik}$ và tương quan $r_{\hat y_i,x_k}$
+#### So sánh hệ số $\hat v_{ik}$ và tương quan $r_{\hat y_i,x_k}$
 
 ```{r so-sanh-he-so-tuong-quan}
 data.frame(
@@ -296,9 +297,33 @@ Hệ số tương quan chỉ đo đóng góp **riêng lẻ** của từng biến
 - Với $\hat y_2$, thứ hạng theo $|\hat v_{2k}|$ và theo $|r_{\hat y_2,x_k}|$ **trùng nhau hoàn toàn** (JP Morgan > Citibank > Wells Fargo > ExxonMobil > Royal Dutch Shell).
 - Với $\hat y_1$, chỉ có hai cổ phiếu dầu đổi chỗ: ExxonMobil có hệ số lớn hơn một chút, nhưng Royal Dutch Shell có tương quan lớn hơn một chút (do $s_{44}<s_{55}$). Cả hai cách đều cho thấy hai cổ phiếu dầu quan trọng nhất trong $\hat y_1$.
 
-### Tỷ lệ phương sai của từng biến được giải thích bởi các thành phần chính
+#### Đóng góp của từng biến vào thành phần chính (contribution)
 
-Bình phương hệ số tương quan $r^2_{\hat y_i,x_k}=\hat v_{ik}^2\hat\lambda_i/s_{kk}$ là tỷ lệ phương sai của biến $x_k$ được giải thích bởi $\hat y_i$. Vì $\sum_{i=1}^{5}\hat v_{ik}^2\hat\lambda_i$ chính là phần tử $s_{kk}$ của $\mathbf S=\hat{\mathbf V}\hat{\boldsymbol\Lambda}\hat{\mathbf V}'$, nên $\sum_{i=1}^{5}r^2_{\hat y_i,x_k}=1$ với mỗi biến $x_k$.
+Đóng góp của biến $x_k$ vào thành phần chính $\hat y_i$: $\text{Contribution}_{ik}=100\,\hat v_{ik}^2$ (%). Vì $\hat{\mathbf v}_i$ có độ dài 1 nên tổng contribution trong mỗi thành phần bằng 100%; mức trung bình mỗi biến là $100/p=$ `r round(100/p)`%.
+
+```{r contribution, fig.width=10, fig.height=3.8}
+contrib <- 100 * V_hat^2
+colnames(contrib) <- paste0("y", 1:p)
+bang(data.frame(Bien = colnames(X), round(contrib, 2), row.names = NULL), digits = 2)
+
+par(mfrow = c(1, 3), mar = c(7, 4, 3, 1))
+for (i in 1:3) {
+  barplot(contrib[, i], las = 2, cex.names = 0.8, col = "lightsteelblue", border = NA,
+          ylim = c(0, 100), ylab = "Contribution (%)", main = paste0("PC", i))
+  abline(h = 100 / p, lty = 2, col = "firebrick")
+}
+par(mfrow = c(1, 1))
+```
+
+- **$\hat y_1$:** Royal Dutch Shell (`r sprintf("%.1f", contrib[4,1])`%) và ExxonMobil (`r sprintf("%.1f", contrib[5,1])`%) chiếm tổng cộng `r sprintf("%.1f", contrib[4,1] + contrib[5,1])`%; ba ngân hàng đều dưới mức trung bình 20%.
+- **$\hat y_2$:** JP Morgan (`r sprintf("%.1f", contrib[1,2])`%) và Citibank (`r sprintf("%.1f", contrib[2,2])`%) đóng góp nhiều nhất, Wells Fargo và hai cổ phiếu dầu khoảng 6–12% mỗi biến.
+- **$\hat y_3$:** gần như chỉ do Royal Dutch Shell (`r sprintf("%.1f", contrib[4,3])`%) và ExxonMobil (`r sprintf("%.1f", contrib[5,3])`%).
+
+Contribution chỉ dựa vào hệ số $\hat v_{ik}$ nên cho cùng thứ hạng với $|\hat v_{ik}|$; nó bổ sung cho tương quan ở trên ở chỗ cho biết phần trăm "cấu tạo" của từng thành phần.
+
+#### Chất lượng biểu diễn của từng biến (cos²)
+
+Chất lượng biểu diễn của biến $x_k$ trên $\hat y_i$ là $\cos^2_{ik}=r^2_{\hat y_i,x_k}$. Bình phương hệ số tương quan $r^2_{\hat y_i,x_k}=\hat v_{ik}^2\hat\lambda_i/s_{kk}$ là tỷ lệ phương sai của biến $x_k$ được giải thích bởi $\hat y_i$. Vì $\sum_{i=1}^{5}\hat v_{ik}^2\hat\lambda_i$ chính là phần tử $s_{kk}$ của $\mathbf S=\hat{\mathbf V}\hat{\boldsymbol\Lambda}\hat{\mathbf V}'$, nên $\sum_{i=1}^{5}r^2_{\hat y_i,x_k}=1$ với mỗi biến $x_k$.
 
 ```{r r-binh-phuong}
 r2_y_x <- r_y_x^2
@@ -313,9 +338,9 @@ bang(data.frame(Bien = colnames(X), round(r2_y_x, 3),
 - Gộp hai thành phần đầu, $\hat y_1$ và $\hat y_2$ giải thích khoảng `r round(100*min(r2_y_x[c(1,2,4,5),1] + r2_y_x[c(1,2,4,5),2]))`%–`r round(100*max(r2_y_x[,1] + r2_y_x[,2]))`% phương sai của JP Morgan, Citibank, Royal Dutch Shell, ExxonMobil, nhưng chỉ khoảng `r round(100*(r2_y_x[3,1] + r2_y_x[3,2]))`% của Wells Fargo; phần lớn phần còn lại của Wells Fargo nằm ở $\hat y_5$ (`r round(100*r2_y_x[3,5])`%). Tức là Wells Fargo có biến động riêng đáng kể mà hai thành phần chung chưa nắm bắt được.
 - Cột cuối bằng 1 với mọi biến, đúng tính chất $\sum_i r^2_{\hat y_i,x_k}=1$.
 
-**Nhận xét chung:** $\hat y_1$ tương quan dương với cả 5 cổ phiếu và mạnh nhất với nhóm dầu; $\hat y_2$ tương quan mạnh với nhóm ngân hàng và ngược dấu, yếu với nhóm dầu; $\hat y_3,\hat y_4$ chỉ tương quan yếu với từng biến, $\hat y_5$ chỉ tương quan mức trung bình với riêng Wells Fargo ($r\approx$ `r round(r_y_x[3,5],2)`). Hệ số tương quan củng cố cách hiểu $\hat y_1$ là thành phần thị trường và $\hat y_2$ là thành phần ngành.
+**Nhận xét chung:** $\hat y_1$ tương quan dương với cả 5 cổ phiếu và mạnh nhất với nhóm dầu; $\hat y_2$ tương quan mạnh với nhóm ngân hàng và ngược dấu, yếu với nhóm dầu; $\hat y_3,\hat y_4$ chỉ tương quan yếu với từng biến, $\hat y_5$ chỉ tương quan mức trung bình với riêng Wells Fargo ($r\approx$ `r sprintf("%.2f", r_y_x[3,5])`). Hệ số tương quan củng cố cách hiểu $\hat y_1$ là thành phần thị trường và $\hat y_2$ là thành phần ngành.
 
-## 3.5 Ma trận hệ số tải (loadings)
+### Ma trận hệ số tải (loadings)
 
 Ma trận hệ số tải là ma trận $\hat{\mathbf V}=(\hat{\mathbf v}_1,\dots,\hat{\mathbf v}_5)$: cột thứ $i$ chứa các hệ số $\hat v_{ik}$ của biến $x_k$ trong thành phần chính $\hat y_i$. Hệ số tải cho biết mỗi biến đóng góp nhiều hay ít, cùng chiều hay ngược chiều vào từng thành phần chính.
 
@@ -327,7 +352,7 @@ round(loadings, 3)
 
 Cột `Comp.1` có 5 hệ số cùng dấu, lớn nhất ở RD Shell và ExxonMobil; cột `Comp.2` tách ba ngân hàng và hai cổ phiếu dầu thành hai nhóm ngược dấu.
 
-### Barplot hệ số tải của hai thành phần chính đầu
+#### Barplot hệ số tải của hai thành phần chính đầu
 
 ```{r barplot-loadings, fig.width=9, fig.height=4}
 par(mfrow = c(1, 2))
@@ -340,10 +365,10 @@ abline(h = 0)
 par(mfrow = c(1, 1))
 ```
 
-- **PC1:** cả 5 cột nằm cùng một phía của trục 0 → mọi cổ phiếu đóng góp cùng chiều vào $\hat y_1$; hai cột dầu (RDShell, ExxonMobil) cao nhất (≈ `r round(abs(V_hat[4,1]), 2)`, `r round(abs(V_hat[5,1]), 2)`), ba cột ngân hàng thấp hơn (≈ `r round(abs(V_hat[3,1]), 2)` – `r round(abs(V_hat[2,1]), 2)`).
-- **PC2:** ba cột ngân hàng nằm một phía, hai cột dầu nằm phía ngược lại → $\hat y_2$ là tương phản giữa ngành ngân hàng và ngành dầu; JP Morgan và Citibank có hệ số lớn nhất (≈ `r round(abs(V_hat[1,2]), 2)`, `r round(abs(V_hat[2,2]), 2)`).
+- **PC1:** cả 5 cột nằm cùng một phía của trục 0 → mọi cổ phiếu đóng góp cùng chiều vào $\hat y_1$; hai cột dầu (RDShell, ExxonMobil) cao nhất (≈ `r sprintf("%.2f", abs(V_hat[4,1]))`, `r sprintf("%.2f", abs(V_hat[5,1]))`), ba cột ngân hàng thấp hơn (≈ `r sprintf("%.2f", abs(V_hat[3,1]))` – `r sprintf("%.2f", abs(V_hat[2,1]))`).
+- **PC2:** ba cột ngân hàng nằm một phía, hai cột dầu nằm phía ngược lại → $\hat y_2$ là tương phản giữa ngành ngân hàng và ngành dầu; JP Morgan và Citibank có hệ số lớn nhất (≈ `r sprintf("%.2f", abs(V_hat[1,2]))`, `r sprintf("%.2f", abs(V_hat[2,2]))`).
 
-### Đồ thị loading
+#### Đồ thị loading
 
 Mỗi biến được biểu diễn bằng một điểm có tọa độ (hệ số tải trên PC1, hệ số tải trên PC2).
 
@@ -357,9 +382,9 @@ text(loadings[, 1], loadings[, 2], labels = colnames(X), pos = 3, cex = 0.9)
 abline(h = 0, v = 0, lty = 2, col = "grey50")
 ```
 
-Các biến tạo thành **hai cụm** tách biệt theo trục PC2: cụm ngân hàng (JPMorgan, Citibank, WellsFargo) và cụm dầu (RDShell, ExxonMobil). Trên trục PC1, cả 5 điểm nằm cùng một phía của 0, cụm dầu nằm xa gốc hơn. Các biến nằm gần nhau trên đồ thị là các biến tương quan mạnh với nhau — khớp với ma trận tương quan ở mục 2.2 (ngân hàng tương quan với nhau, dầu tương quan với nhau, tương quan chéo thấp).
+Các biến tạo thành **hai cụm** tách biệt theo trục PC2: cụm ngân hàng (JPMorgan, Citibank, WellsFargo) và cụm dầu (RDShell, ExxonMobil). Trên trục PC1, cả 5 điểm nằm cùng một phía của 0, cụm dầu nằm xa gốc hơn. Các biến nằm gần nhau trên đồ thị là các biến tương quan mạnh với nhau — khớp với ma trận tương quan ở mục Ma trận tương quan mẫu R (ngân hàng tương quan với nhau, dầu tương quan với nhau, tương quan chéo thấp).
 
-### Đồ thị score
+#### Đồ thị score
 
 Mỗi tuần được biểu diễn bằng một điểm (vòng tròn) có tọa độ $(\hat y_{j1},\hat y_{j2})$ (score trên PC1, PC2), nhãn bên cạnh là số thứ tự tuần.
 
@@ -382,7 +407,42 @@ Các điểm phân tán quanh gốc (0, 0) — gốc ứng với một tuần c�
 - **Theo PC1 (thị trường):** tuần `r which.min(Y_hat[, 1])` và tuần `r which.max(Y_hat[, 1])` nằm ở hai đầu trục PC1. Bảng trên cho thấy ở tuần `r which.min(Y_hat[, 1])` cả 5 cổ phiếu cùng biến động mạnh theo một chiều, ở tuần `r which.max(Y_hat[, 1])` theo chiều ngược lại → điểm càng xa gốc theo PC1 là tuần thị trường chung biến động càng mạnh.
 - **Theo PC2 (ngành):** tuần `r which.min(Y_hat[, 2])` và tuần `r which.max(Y_hat[, 2])` nằm ở hai đầu trục PC2. Ở các tuần này, nhóm ngân hàng và nhóm dầu đi ngược chiều nhau (một ngành tăng, ngành kia giảm) → điểm càng xa gốc theo PC2 là tuần mà hai ngành phân hóa càng mạnh.
 
-### Đồ thị biplot
+#### 95% mật độ ellipsoid và các thành phần chính
+
+Nếu ${\mathbf x}$ có phân phối chuẩn nhiều chiều thì $(\hat y_1,\hat y_2)$ xấp xỉ chuẩn với trung bình 0, không tương quan, phương sai $\hat\lambda_1,\hat\lambda_2$. Ellipse mật độ 95% trên mặt phẳng PC1–PC2 là tập các điểm thỏa
+
+$$\frac{\hat y_1^2}{\hat\lambda_1}+\frac{\hat y_2^2}{\hat\lambda_2}\le\chi^2_2(0.95),$$
+
+có tâm tại gốc, trục lớn theo hướng PC1 với nửa độ dài $\sqrt{\chi^2_2(0.95)\,\hat\lambda_1}$, trục nhỏ theo hướng PC2 với nửa độ dài $\sqrt{\chi^2_2(0.95)\,\hat\lambda_2}$. Hai mũi tên trên đồ thị là hai thành phần chính (hai trục của ellipse).
+
+```{r ellipse-95, fig.width=7.5, fig.height=6.5}
+chi2_95 <- qchisq(0.95, df = 2)
+nua_truc_1 <- sqrt(chi2_95 * lambda_hat[1])
+nua_truc_2 <- sqrt(chi2_95 * lambda_hat[2])
+goc <- seq(0, 2 * pi, length.out = 300)
+
+plot(Y_hat[, 1], Y_hat[, 2], pch = 19, col = "indianred", asp = 1,
+     xlim = range(c(Y_hat[, 1], -nua_truc_1, nua_truc_1)) * 1.1,
+     ylim = range(c(Y_hat[, 2], -nua_truc_2, nua_truc_2)) * 1.1,
+     xlab = paste0("PC1 (", round(100 * lambda_hat[1] / sum(lambda_hat), 1), "%)"),
+     ylab = paste0("PC2 (", round(100 * lambda_hat[2] / sum(lambda_hat), 1), "%)"),
+     main = "95% mật độ ellipsoid và các thành phần chính")
+lines(nua_truc_1 * cos(goc), nua_truc_2 * sin(goc), lwd = 2, col = "navy")
+arrows(-nua_truc_1, 0, nua_truc_1, 0, code = 3, length = 0.12, lwd = 2, col = "navy")
+arrows(0, -nua_truc_2, 0, nua_truc_2, code = 3, length = 0.12, lwd = 2, col = "navy")
+
+# các tuần nằm ngoài ellipse 95%
+d2_pc <- Y_hat[, 1]^2 / lambda_hat[1] + Y_hat[, 2]^2 / lambda_hat[2]
+ngoai <- which(d2_pc > chi2_95)
+text(Y_hat[ngoai, 1], Y_hat[ngoai, 2], labels = (1:n)[ngoai], pos = 4, cex = 0.7)
+c(nua_truc_1 = nua_truc_1, nua_truc_2 = nua_truc_2)
+c(so_ngoai_ellipse = length(ngoai), ky_vong = 0.05 * n)
+(1:n)[ngoai]
+```
+
+Ellipse có tâm tại gốc (điểm trung bình), trục lớn nằm theo hướng PC1 với nửa độ dài `r sprintf("%.4f", nua_truc_1)` và trục nhỏ theo hướng PC2 với nửa độ dài `r sprintf("%.4f", nua_truc_2)`; tỷ số hai trục $\sqrt{\hat\lambda_1/\hat\lambda_2}=$ `r round(sqrt(lambda_hat[1] / lambda_hat[2]), 2)` cho thấy dữ liệu trải rộng theo PC1 nhiều hơn theo PC2. Có `r length(ngoai)` tuần nằm ngoài ellipse (`r paste((1:n)[ngoai], collapse = ", ")`), so với khoảng `r round(0.05 * n, 1)` tuần kỳ vọng nếu dữ liệu chuẩn. Các tuần ngoài ellipse là những tuần thị trường hoặc hai ngành biến động mạnh (đã thấy ở hai đầu trục trong đồ thị score).
+
+#### Đồ thị biplot
 
 Biplot vẽ chồng đồ thị score (các tuần, dạng số thứ tự) và đồ thị loading (các biến, dạng mũi tên từ gốc) trên cùng một hệ trục PC1–PC2. Trục dưới/trái là thang của score, trục trên/phải là thang của loading.
 
@@ -399,11 +459,11 @@ abline(h = 0, v = 0, lty = 2, col = "grey60")
 - **Mũi tên (biến):** ba mũi tên ngân hàng chụm lại một hướng, hai mũi tên dầu chụm lại hướng khác; góc giữa hai mũi tên càng nhỏ thì hai biến tương quan càng mạnh (xấp xỉ, vì biplot chỉ biểu diễn trên 2 thành phần đầu) → lại thấy hai nhóm ngân hàng và dầu. Mọi mũi tên đều có thành phần cùng chiều trên PC1 (thành phần thị trường), còn trên PC2 thì hai nhóm chỉ ngược chiều nhau (thành phần ngành).
 - **Điểm (tuần) so với mũi tên:** tuần nằm xa gốc theo hướng của một mũi tên là tuần cổ phiếu đó có suất sinh lợi cao hơn trung bình; nằm ngược hướng là thấp hơn trung bình. Ví dụ tuần `r which.max(Y_hat[, 1])` nằm theo hướng chung của cả 5 mũi tên (cả 5 cổ phiếu cùng tăng mạnh), tuần `r which.min(Y_hat[, 1])` nằm ngược hướng (cả 5 cùng giảm mạnh); tuần `r which.max(Y_hat[, 2])` nằm về phía mũi tên ngân hàng (ngân hàng tăng, dầu giảm), tuần `r which.min(Y_hat[, 2])` nằm về phía mũi tên dầu (dầu tăng, ngân hàng giảm) — khớp với bảng ở đồ thị score.
 
-**Kết luận câu (a):** Ma trận hiệp phương sai mẫu $\mathbf S$ như ở mục 3.1. Năm thành phần chính mẫu là $\hat y_i=\hat{\mathbf v}_i'\mathbf x$, $i=1,\dots,5$, với hệ số cho ở mục 3.3 và phương sai lần lượt $\hat\lambda_1=$ `r format(lambda_hat[1], digits = 4)`, $\hat\lambda_2=$ `r format(lambda_hat[2], digits = 4)`, $\hat\lambda_3=$ `r format(lambda_hat[3], digits = 4)`, $\hat\lambda_4=$ `r format(lambda_hat[4], digits = 4)`, $\hat\lambda_5=$ `r format(lambda_hat[5], digits = 4)`; các thành phần chính đôi một không tương quan.
+**Kết luận câu (a):** Ma trận hiệp phương sai mẫu $\mathbf S$ như ở mục Vectơ trung bình mẫu và ma trận hiệp phương sai mẫu S. Năm thành phần chính mẫu là $\hat y_i=\hat{\mathbf v}_i'\mathbf x$, $i=1,\dots,5$, với hệ số cho ở mục Các thành phần chính mẫu và phương sai lần lượt $\hat\lambda_1=$ `r format(lambda_hat[1], digits = 4)`, $\hat\lambda_2=$ `r format(lambda_hat[2], digits = 4)`, $\hat\lambda_3=$ `r format(lambda_hat[3], digits = 4)`, $\hat\lambda_4=$ `r format(lambda_hat[4], digits = 4)`, $\hat\lambda_5=$ `r format(lambda_hat[5], digits = 4)`; các thành phần chính đôi một không tương quan.
 
-# 4. Câu (b): Tỷ số đóng góp vào phương sai suy rộng của 3 thành phần chính đầu
+## Câu (b) — Tỷ số đóng góp vào phương sai suy rộng của 3 thành phần chính đầu
 
-## 4.1 Tính tỷ số đóng góp
+### Tính tỷ số đóng góp
 
 Phương sai suy rộng (tổng phương sai mẫu) $=\text{tr}(\mathbf S)=\sum_{k}s_{kk}=\hat\lambda_1+\dots+\hat\lambda_5$. Tỷ số đóng góp của thành phần chính thứ $i$ là $\hat\lambda_i/\sum_k\hat\lambda_k$; tỷ lệ tích lũy của $q$ thành phần đầu là $r_q=\sum_{k=1}^q\hat\lambda_k/\sum_{k=1}^p\hat\lambda_k$.
 
@@ -429,7 +489,7 @@ $\text{tr}(\mathbf S)=$ `r format(tong_phuong_sai, digits = 5)` $=\sum\hat\lambd
 - $\hat y_2$: `r round(100*ty_le[2], 2)`%; $\hat y_3$: `r round(100*ty_le[3], 2)`%
 - **Ba thành phần đầu:** $r_3=\dfrac{\hat\lambda_1+\hat\lambda_2+\hat\lambda_3}{\sum_{k=1}^5\hat\lambda_k}=$ **`r round(100*ty_le_tich_luy[3], 2)`%** (hai thành phần đầu: $r_2=$ `r round(100*ty_le_tich_luy[2], 2)`%).
 
-## 4.2 Scree-plot
+### Scree-plot
 
 ```{r scree-plot, fig.width=9, fig.height=4}
 par(mfrow = c(1, 2))
@@ -444,7 +504,7 @@ par(mfrow = c(1, 1))
 
 Scree plot giảm mạnh từ $\hat\lambda_1$ đến $\hat\lambda_2$ và $\hat\lambda_3$, sau đó gần như nằm ngang từ $\hat\lambda_3$ đến $\hat\lambda_5$ → "khuỷu tay" ở thành phần thứ 3. Đường đỏ (giá trị trung bình $\bar\lambda$) chỉ có $\hat\lambda_1,\hat\lambda_2$ nằm trên. Đường tích lũy vượt 80% tại $q=2$ và gần chạm 90% tại $q=3$.
 
-## 4.3 Ý nghĩa của ba thành phần chính đầu
+### Ý nghĩa của ba thành phần chính đầu
 
 ```{r bang-he-so}
 bang(data.frame(Bien = colnames(X), V_hat[, 1:3], row.names = NULL), digits = 3)
@@ -456,11 +516,11 @@ bang(data.frame(Bien = colnames(X), V_hat[, 1:3], row.names = NULL), digits = 3)
 
 **Kết luận câu (b):** Ba thành phần chính mẫu đầu tiên có tỷ số đóng góp vào phương sai suy rộng lần lượt là `r round(100*ty_le[1], 2)`%, `r round(100*ty_le[2], 2)`%, `r round(100*ty_le[3], 2)`%, tổng cộng **`r round(100*ty_le_tich_luy[3], 2)`%**. Nghĩa là ba tổ hợp tuyến tính $\hat y_1,\hat y_2,\hat y_3$ (thị trường, ngành ngân hàng–dầu, khác biệt giữa hai cổ phiếu dầu) giữ lại khoảng 90% toàn bộ biến thiên của suất sinh lợi 5 cổ phiếu; phần còn lại (~`r round(100*(1-ty_le_tich_luy[3]), 1)`%) là biến thiên riêng lẻ của từng cổ phiếu.
 
-# 5. Câu (c): Khoảng tin cậy đồng thời Bonferroni 90% cho λ₁, λ₂, λ₃
+## Câu (c) — Khoảng tin cậy đồng thời Bonferroni 90% cho λ₁, λ₂, λ₃
 
-## 5.1 Công thức
+### Công thức
 
-Giả thiết: $\mathbf X_1,\dots,\mathbf X_{103}$ là mẫu ngẫu nhiên từ $N_5(\boldsymbol\mu,\boldsymbol\Sigma)$ (mục 1.3), $\boldsymbol\Sigma$ xác định dương với các trị riêng phân biệt $\lambda_1>\lambda_2>\dots>\lambda_5>0$, và $n=`r n`$ lớn. Khi đó $\hat\lambda_i$ xấp xỉ $N(\lambda_i,2\lambda_i^2/n)$ và độc lập nhau, cho khoảng tin cậy độ tin cậy $\gamma$:
+Giả thiết: $\mathbf X_1,\dots,\mathbf X_{103}$ là mẫu ngẫu nhiên từ $N_5(\boldsymbol\mu,\boldsymbol\Sigma)$ (mục Giả định chuẩn nhiều chiều), $\boldsymbol\Sigma$ xác định dương với các trị riêng phân biệt $\lambda_1>\lambda_2>\dots>\lambda_5>0$, và $n=`r n`$ lớn. Khi đó $\hat\lambda_i$ xấp xỉ $N(\lambda_i,2\lambda_i^2/n)$ và độc lập nhau, cho khoảng tin cậy độ tin cậy $\gamma$:
 
 $$\frac{\hat\lambda_i}{1+z_{(1+\gamma)/2}\sqrt{2/n}}\le\lambda_i\le\frac{\hat\lambda_i}{1-z_{(1+\gamma)/2}\sqrt{2/n}},$$
 
@@ -470,7 +530,7 @@ trong đó $z_{(1+\gamma)/2}$ là phân vị của phân phối $N(0,1)$ ở m�
 
 Ở đây $\gamma=0.90$, $m=3$: $\gamma^*=1-0.1/3$, phân vị cần dùng là $z_{1-0.1/6}=z_{0.98333}$.
 
-## 5.2 Tính toán
+### Tính toán
 
 ```{r bonferroni}
 gamma <- 0.90
@@ -506,12 +566,12 @@ arrows(1:m, can_duoi, 1:m, can_tren, angle = 90, code = 3, length = 0.08, col = 
 
 Ba khoảng **không chồng lên nhau** (cận dưới của $\lambda_1$ > cận trên của $\lambda_2$; cận dưới của $\lambda_2$ > cận trên của $\lambda_3$) → với độ tin cậy ít nhất xấp xỉ 90%, $\lambda_1>\lambda_2>\lambda_3$ thực sự khác nhau. Các khoảng khá rộng (độ rộng tăng cùng tốc độ với $\hat\lambda_i$), nên cần thận trọng khi quyết định giữ hay bỏ thành phần chính chỉ dựa trên các giá trị $\hat\lambda_i$.
 
-**Kết luận câu (c):** Với độ tin cậy đồng thời **ít nhất xấp xỉ 90%** (xấp xỉ vì dựa trên phân phối mẫu lớn và giả định chuẩn ở mục 1.3), ta có đồng thời
+**Kết luận câu (c):** Với độ tin cậy đồng thời **ít nhất xấp xỉ 90%** (xấp xỉ vì dựa trên phân phối mẫu lớn và giả định chuẩn ở mục Giả định chuẩn nhiều chiều), ta có đồng thời
 $`r format(can_duoi[1], digits = 4)`\le\lambda_1\le`r format(can_tren[1], digits = 4)`$, $\ `r format(can_duoi[2], digits = 4)`\le\lambda_2\le`r format(can_tren[2], digits = 4)`$, $\ `r format(can_duoi[3], digits = 4)`\le\lambda_3\le`r format(can_tren[3], digits = 4)`$.
 
-# 6. Câu (d): Có thể thu gọn dữ liệu xuống ít hơn 5 chiều không?
+## Câu (d) — Có thể thu gọn dữ liệu xuống ít hơn 5 chiều không?
 
-## 6.1 Ý nghĩa của từng thành phần chính
+### Ý nghĩa của từng thành phần chính
 
 Để quyết định giữ bao nhiêu chiều, cần biết mỗi thành phần chính đại diện cho yếu tố gì. Ta đọc đồng thời hệ số $\hat v_{ik}$ (trọng số của biến $x_k$ trong $\hat y_i$) và tương quan $r_{\hat y_i,x_k}$ (mức độ $\hat y_i$ đại diện cho biến $x_k$):
 
@@ -522,15 +582,23 @@ bang(data.frame(Bien = colnames(X), r_y_x, row.names = NULL), digits = 3)
 
 | TPC | Tỷ lệ phương sai | Cấu trúc hệ số | Ý nghĩa |
 |---|---|---|---|
-| $\hat y_1$ | `r round(100*ty_le[1], 2)`% | Cả 5 hệ số cùng dấu; dầu (`r round(V_hat[4,1],2)`, `r round(V_hat[5,1],2)`) lớn hơn ngân hàng (`r round(V_hat[1,1],2)`, `r round(V_hat[2,1],2)`, `r round(V_hat[3,1],2)`) | **Thành phần thị trường**: biến động chung của cả 5 cổ phiếu theo tình hình kinh tế/thị trường. Tương quan với cả 5 biến đều dương (`r sprintf("%.2f", min(r_y_x[,1]))` – `r sprintf("%.2f", max(r_y_x[,1]))`) |
-| $\hat y_2$ | `r round(100*ty_le[2], 2)`% | Ngân hàng (`r round(V_hat[1,2],2)`, `r round(V_hat[2,2],2)`, `r round(V_hat[3,2],2)`) ngược dấu với dầu (`r round(V_hat[4,2],2)`, `r round(V_hat[5,2],2)`) | **Thành phần ngành**: tuần mà cổ phiếu ngân hàng tăng mạnh hơn cổ phiếu dầu (hoặc ngược lại). Là yếu tố chính của nhóm ngân hàng (tương quan `r sprintf("%.2f", r_y_x[3,2])` – `r sprintf("%.2f", r_y_x[1,2])`) |
-| $\hat y_3$ | `r round(100*ty_le[3], 2)`% | RD Shell (`r round(V_hat[4,3],2)`) ngược dấu ExxonMobil (`r round(V_hat[5,3],2)`) | **Khác biệt giữa hai cổ phiếu dầu**: biến động riêng của từng công ty dầu, không phải của cả ngành |
-| $\hat y_4$ | `r round(100*ty_le[4], 2)`% | JP Morgan (`r round(V_hat[1,4],2)`) ngược dấu Citibank (`r round(V_hat[2,4],2)`) và Wells Fargo (`r round(V_hat[3,4],2)`) | **Khác biệt giữa JP Morgan và hai ngân hàng còn lại**: biến động riêng của JP Morgan |
-| $\hat y_5$ | `r round(100*ty_le[5], 2)`% | Wells Fargo (`r round(V_hat[3,5],2)`) ngược dấu Citibank (`r round(V_hat[2,5],2)`) | **Khác biệt giữa Wells Fargo và Citibank**: biến động riêng của hai ngân hàng này |
+| $\hat y_1$ | `r round(100*ty_le[1], 2)`% | Cả 5 hệ số cùng dấu; dầu (`r sprintf("%.2f", V_hat[4,1])`, `r sprintf("%.2f", V_hat[5,1])`) lớn hơn ngân hàng (`r sprintf("%.2f", V_hat[1,1])`, `r sprintf("%.2f", V_hat[2,1])`, `r sprintf("%.2f", V_hat[3,1])`) | **Thành phần thị trường**: biến động chung của cả 5 cổ phiếu theo tình hình kinh tế/thị trường. Tương quan với cả 5 biến đều dương (`r sprintf("%.2f", min(r_y_x[,1]))` – `r sprintf("%.2f", max(r_y_x[,1]))`) |
+| $\hat y_2$ | `r round(100*ty_le[2], 2)`% | Ngân hàng (`r sprintf("%.2f", V_hat[1,2])`, `r sprintf("%.2f", V_hat[2,2])`, `r sprintf("%.2f", V_hat[3,2])`) ngược dấu với dầu (`r sprintf("%.2f", V_hat[4,2])`, `r sprintf("%.2f", V_hat[5,2])`) | **Thành phần ngành**: tuần mà cổ phiếu ngân hàng tăng mạnh hơn cổ phiếu dầu (hoặc ngược lại). Là yếu tố chính của nhóm ngân hàng (tương quan `r sprintf("%.2f", r_y_x[3,2])` – `r sprintf("%.2f", r_y_x[1,2])`) |
+| $\hat y_3$ | `r round(100*ty_le[3], 2)`% | RD Shell (`r sprintf("%.2f", V_hat[4,3])`) ngược dấu ExxonMobil (`r sprintf("%.2f", V_hat[5,3])`) | **Khác biệt giữa hai cổ phiếu dầu**: biến động riêng của từng công ty dầu, không phải của cả ngành |
+| $\hat y_4$ | `r round(100*ty_le[4], 2)`% | JP Morgan (`r sprintf("%.2f", V_hat[1,4])`) ngược dấu Citibank (`r sprintf("%.2f", V_hat[2,4])`) và Wells Fargo (`r sprintf("%.2f", V_hat[3,4])`) | **Khác biệt giữa JP Morgan và hai ngân hàng còn lại**: biến động riêng của JP Morgan |
+| $\hat y_5$ | `r round(100*ty_le[5], 2)`% | Wells Fargo (`r sprintf("%.2f", V_hat[3,5])`) ngược dấu Citibank (`r sprintf("%.2f", V_hat[2,5])`) | **Khác biệt giữa Wells Fargo và Citibank**: biến động riêng của hai ngân hàng này |
 
 Như vậy chỉ $\hat y_1$ và $\hat y_2$ phản ánh các yếu tố **chung** (thị trường, ngành) tác động lên nhiều cổ phiếu cùng lúc; $\hat y_3,\hat y_4,\hat y_5$ chỉ là các **tương phản giữa từng cặp công ty** — biến thiên riêng của từng cổ phiếu, mỗi thành phần chỉ tương quan đáng kể với một, hai biến.
 
-## 6.2 Chọn số thành phần chính
+Diễn giải cụ thể từng thành phần:
+
+- **$\hat y_1$ (thị trường).** Năm hệ số cùng dấu và năm tương quan đều dương, mạnh nhất với Royal Dutch Shell và ExxonMobil (`r sprintf("%.2f", r_y_x[4,1])`, `r sprintf("%.2f", r_y_x[5,1])`), mức trung bình với ba ngân hàng. Các biến nổi bật không chia thành nhóm đối lập, nên $\hat y_1$ là hướng biến thiên **chung** của cả thị trường. Tuần có điểm $\hat y_1$ cao là tuần cả 5 cổ phiếu cùng có suất sinh lợi cao hơn trung bình (nổi bật nhất là cổ phiếu dầu); tuần có điểm thấp là tuần cả 5 cùng giảm.
+- **$\hat y_2$ (ngành).** Biến nổi bật chia thành hai nhóm ngược dấu: ba ngân hàng (tương quan `r sprintf("%.2f", r_y_x[3,2])` – `r sprintf("%.2f", r_y_x[1,2])`) và hai cổ phiếu dầu (`r sprintf("%.2f", r_y_x[4,2])`, `r sprintf("%.2f", r_y_x[5,2])`). $\hat y_2$ vì vậy không đo mức tăng/giảm chung mà **phân biệt hai ngành**. Tuần có điểm $\hat y_2$ cao là tuần cổ phiếu ngân hàng tăng mạnh hơn (hoặc giảm ít hơn) cổ phiếu dầu; điểm thấp là ngược lại.
+- **$\hat y_3$ (khác biệt trong ngành dầu).** Hai biến nổi bật là Royal Dutch Shell (`r sprintf("%.2f", V_hat[4,3])`) và ExxonMobil (`r sprintf("%.2f", V_hat[5,3])`), cùng ngành nhưng ngược dấu, các tương quan đều dưới 0.4. Tuần có điểm $\hat y_3$ cao là tuần hai cổ phiếu dầu đi lệch nhau theo một chiều (cổ phiếu có hệ số dương tăng hơn cổ phiếu có hệ số âm), tức biến động riêng của từng công ty dầu.
+- **$\hat y_4$ (JP Morgan so với hai ngân hàng còn lại).** JP Morgan (`r sprintf("%.2f", V_hat[1,4])`) ngược dấu với Citibank (`r sprintf("%.2f", V_hat[2,4])`) và Wells Fargo (`r sprintf("%.2f", V_hat[3,4])`); tuần có điểm $\hat y_4$ cao là tuần JP Morgan khác biệt so với hai ngân hàng kia theo chiều của hệ số.
+- **$\hat y_5$ (Wells Fargo so với Citibank).** Wells Fargo (`r sprintf("%.2f", V_hat[3,5])`) ngược dấu Citibank (`r sprintf("%.2f", V_hat[2,5])`); đây là thành phần duy nhất từ $\hat y_3$ trở đi có tương quan mức trung bình với một biến (Wells Fargo, $r\approx$ `r sprintf("%.2f", r_y_x[3,5])`), cho thấy Wells Fargo có biến động riêng đáng kể.
+
+### Chọn số thành phần chính
 
 ```{r tong-hop-chon-q}
 lambda_tb <- mean(lambda_hat)                    # trung bình các trị riêng
@@ -543,13 +611,13 @@ data.frame(
 lambda_tb
 ```
 
-1. **Tỷ lệ phương sai tích lũy:** $r_2=$ `r round(100*ty_le_tich_luy[2], 2)`% đã đạt ngưỡng 80%; $r_3=$ `r round(100*ty_le_tich_luy[3], 2)`% ≈ 90%.
+1. **Tỷ lệ phương sai tích lũy:** cần `r which(ty_le_tich_luy >= 0.7)[1]` thành phần để đạt 70%, `r which(ty_le_tich_luy >= 0.8)[1]` thành phần để đạt 80% ($r_2=$ `r round(100*ty_le_tich_luy[2], 2)`%) và `r which(ty_le_tich_luy >= 0.9)[1]` thành phần để đạt 90% ($r_3=$ `r round(100*ty_le_tich_luy[3], 2)`%, sát ngưỡng 90%; $r_4=$ `r round(100*ty_le_tich_luy[4], 2)`%). Với ngưỡng thường dùng 80% → giữ 2 thành phần.
 2. **Scree-plot:** đường cong dốc từ $\hat\lambda_1$ đến $\hat\lambda_3$, sau đó gần như nằm ngang ($\hat\lambda_3,\hat\lambda_4,\hat\lambda_5$ nhỏ và gần bằng nhau) → khuỷu tay ở thành phần thứ 3; giữ các thành phần trên đoạn dốc trước khuỷu tay là 2 thành phần, nếu tính cả điểm khuỷu tay là 3.
 3. **Tiêu chuẩn Kaiser** (giữ $\hat\lambda_q>\bar\lambda$): $\bar\lambda=$ `r format(lambda_tb, digits = 4)`; chỉ $\hat\lambda_1,\hat\lambda_2>\bar\lambda$ → giữ 2 thành phần.
-4. **Câu (c):** ba khoảng tin cậy không chồng lên nhau → $\lambda_1,\lambda_2,\lambda_3$ khác nhau thực sự, nên $\hat y_1,\hat y_2,\hat y_3$ là các thành phần phân biệt (độ chính xác của vectơ riêng $\hat{\mathbf v}_i$ phụ thuộc vào mức khác biệt giữa các trị riêng; trị riêng tách biệt thì hướng $\hat{\mathbf v}_i$ ổn định). Cận dưới của $\lambda_1$ và $\lambda_2$ vẫn lớn hơn nhiều so với cận trên của $\lambda_3$ → ưu thế của hai thành phần đầu không phải do sai số lấy mẫu.
-5. **Ý nghĩa (mục 6.1):** hai thành phần đầu là yếu tố chung có cách hiểu rõ ràng (thị trường, ngành); ba thành phần sau là biến thiên riêng của từng cặp công ty.
+4. **Câu (c):** ba khoảng tin cậy không chồng lên nhau → $\lambda_1,\lambda_2,\lambda_3$ khác nhau thực sự, nên $\hat y_1,\hat y_2,\hat y_3$ là các thành phần phân biệt (độ chính xác của vectơ riêng $\hat{\mathbf v}_i$ phụ thuộc vào mức khác biệt giữa các trị riêng; trị riêng tách biệt thì hướng $\hat{\mathbf v}_i$ ổn định). Các khoảng khá rộng nên quyết định giữ hay bỏ thành phần không dựa riêng vào $\hat\lambda_i$ mà kết hợp các tiêu chí 1–3 và ý nghĩa ở mục Ý nghĩa của từng thành phần chính.
+5. **Ý nghĩa (mục Ý nghĩa của từng thành phần chính):** hai thành phần đầu là yếu tố chung có cách hiểu rõ ràng (thị trường, ngành); ba thành phần sau là biến thiên riêng của từng cặp công ty.
 
-## 6.3 Kết luận
+### Kết luận
 
 **Kết luận câu (d):** **Có**, dữ liệu suất sinh lợi 5 cổ phiếu có thể thu gọn xuống ít hơn 5 chiều. Giữ **2 thành phần chính** là đủ:
 
@@ -557,3 +625,5 @@ lambda_tb
 - $\hat y_2$ — **thành phần ngành** (tương phản ngân hàng – dầu lửa),
 
 giải thích `r round(100*ty_le_tich_luy[2], 1)`% phương sai suy rộng, thỏa ngưỡng 80% và tiêu chuẩn Kaiser; khoảng tin cậy ở câu (c) cho thấy $\lambda_1,\lambda_2$ lớn hơn thực sự so với $\lambda_3$. Nói cách khác, phần lớn biến thiên của suất sinh lợi 5 cổ phiếu trong giai đoạn 2004–2005 được giải thích bởi **hoạt động của thị trường chung** và **hoạt động riêng của từng ngành** (hai yếu tố không tương quan với nhau). Nếu muốn giữ khoảng 90% biến thiên (theo scree-plot), có thể dùng **3 chiều** ($r_3=$ `r round(100*ty_le_tich_luy[3], 1)`%), thêm thành phần khác biệt giữa hai cổ phiếu dầu. Hai thành phần cuối ($\hat y_4,\hat y_5$, tổng cộng `r round(100*(1-ty_le_tich_luy[3]), 1)`%) chỉ là biến thiên riêng của từng ngân hàng, có thể bỏ.
+
+Hạn chế: hai thành phần giữ lại biểu diễn tốt bốn cổ phiếu (khoảng `r round(100*min(r2_y_x[c(1,2,4,5),1] + r2_y_x[c(1,2,4,5),2]))`%–`r round(100*max(r2_y_x[,1] + r2_y_x[,2]))`% phương sai của mỗi biến, mục Hệ số tương quan giữa thành phần chính và biến gốc) nhưng chỉ khoảng `r round(100*(r2_y_x[3,1] + r2_y_x[3,2]))`% phương sai của Wells Fargo; phần lớn biến động riêng của Wells Fargo nằm ở $\hat y_5$ và bị bỏ đi khi thu gọn xuống 2 chiều.
