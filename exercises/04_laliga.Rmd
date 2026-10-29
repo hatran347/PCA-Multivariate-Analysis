@@ -1,6 +1,10 @@
 ---
-title: "La Liga - PCA"
-output: html_document
+title: "La Liga - PCA thống kê thành tích các đội bóng"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
 ---
 
 ```{r setup, include=FALSE}
@@ -8,18 +12,695 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 source(here::here("R", "setup.R"))
 ```
 
-## 1. Introduction
+## Giới thiệu và đề bài
 
-## 2. Data description
+### Bối cảnh
 
-## 3. Methodology
+Bộ dữ liệu `laliga` ghi nhận thống kê thành tích của **20 đội bóng** tham dự **một mùa giải La Liga** (giải vô địch quốc gia Tây Ban Nha). Mỗi đội đá **38 trận**; đội thắng được 3 điểm, hòa được 1 điểm, thua không được điểm. Ngoài biến tên đội (`Team`), dữ liệu gồm 19 biến số:
 
-## 4. PCA analysis
+| Nhóm | Biến | Ý nghĩa |
+|---|---|---|
+| Kết quả | `Points`, `Matches`, `Wins`, `Draws`, `Loses` | Điểm, số trận, số trận thắng/hòa/thua |
+| Bàn thắng | `Goals.scored`, `Goals.conceded`, `Difference.goals` | Bàn ghi được, bàn thua, hiệu số = ghi được − thua |
+| Tỷ lệ bàn thắng | `Percentage.scored.goals`, `Percentage.conceded.goals` | % bàn ghi được / bàn thua so với tổng số bàn của cả giải |
+| Tấn công | `Shots`, `Shots.on.goal`, `Penalties.scored`, `Assistances`, `Offsides` | Số cú sút, sút trúng đích, bàn từ phạt đền, kiến tạo, việt vị |
+| Phòng ngự | `Matches.without.conceding` | Số trận giữ sạch lưới |
+| Kỷ luật | `Fouls.made`, `Yellow.cards`, `Red.cards` | Số lần phạm lỗi, thẻ vàng, thẻ đỏ |
 
-```{r pca-analysis}
-# add analysis here
+Các biến này tương quan mạnh với nhau: đội mạnh vừa thắng nhiều, ghi nhiều bàn, sút nhiều, vừa thua ít bàn; một số biến còn được tính trực tiếp từ các biến khác (ví dụ `Points` = 3·`Wins` + `Draws`). Vì vậy 19 biến chứa nhiều thông tin trùng lặp, và phân tích thành phần chính (PCA) được dùng để tóm tắt thành tích các đội bằng một số ít thành phần không tương quan.
+
+### Câu hỏi đặt ra
+
+Dựa trên bộ dữ liệu La Liga, hãy thực hiện phân tích thành phần chính (PCA) trên các biến thống kê thành tích của các đội bóng. Hãy xác định số thành phần chính cần giữ lại và nêu ý nghĩa của các thành phần chính đầu tiên được giữ lại.
+
+Bài làm chia thành ba câu:
+
+- **(a)** Thực hiện PCA trên các biến thống kê thành tích.
+- **(b)** Xác định số thành phần chính cần giữ lại.
+- **(c)** Nêu ý nghĩa của các thành phần chính được giữ lại.
+
+## Dữ liệu và kiểm tra đầu vào
+
+### Mô tả dữ liệu
+
+```{r doc-du-lieu}
+laliga <- as.data.frame(read_laliga())
+dim(laliga)
+str(laliga)
+head(laliga)
+colSums(is.na(laliga))
 ```
 
-## 5. Results and interpretation
+Dữ liệu có `r nrow(laliga)` đội và `r ncol(laliga)` cột (1 cột tên đội, `r ncol(laliga) - 1` biến số), không có giá trị thiếu.
 
-## 6. Conclusion
+```{r thong-ke-mo-ta}
+summary(laliga[, -1])
+```
+
+Các biến có thang đo rất khác nhau: số cú sút và số lần phạm lỗi ở mức vài trăm, số điểm và số bàn thắng ở mức vài chục, còn số thẻ đỏ, số bàn từ phạt đền và hai biến tỷ lệ phần trăm chỉ ở mức vài đơn vị.
+
+### Chọn biến đưa vào phân tích
+
+```{r bien-hang-so}
+round(apply(laliga[, -1], 2, sd), 3)
+```
+
+`Matches` có độ lệch chuẩn bằng 0 (mọi đội đều đá `r laliga$Matches[1]` trận) nên không mang thông tin để phân biệt các đội, và hệ số tương quan của nó với các biến khác không xác định → **loại `Matches`**. `Team` là nhãn, chỉ dùng để ghi tên trên đồ thị.
+
+Một số biến là hàm tuyến tính (chính xác hoặc gần như chính xác) của các biến khác:
+
+```{r quan-he-tuyen-tinh}
+c(
+  Points_tru_3W_D        = max(abs(laliga$Points - (3 * laliga$Wins + laliga$Draws))),
+  Loses_tru_38_W_D       = max(abs(laliga$Loses - (38 - laliga$Wins - laliga$Draws))),
+  Difference_tru_GS_GC   = max(abs(laliga$Difference.goals - (laliga$Goals.scored - laliga$Goals.conceded)))
+)
+c(
+  r_PctScored_GoalsScored     = cor(laliga$Percentage.scored.goals, laliga$Goals.scored),
+  r_PctConceded_GoalsConceded = cor(laliga$Percentage.conceded.goals, laliga$Goals.conceded)
+)
+```
+
+- `Points` = 3·`Wins` + `Draws`, `Loses` = 38 − `Wins` − `Draws`, `Difference.goals` = `Goals.scored` − `Goals.conceded` đúng chính xác (sai lệch bằng 0).
+- Hai biến tỷ lệ phần trăm gần như tỷ lệ thuận với số bàn ghi được / bàn thua (tương quan ≈ 1; chỉ lệch do làm tròn).
+
+Theo đề bài, ta giữ đủ các biến thống kê thành tích (trừ `Matches`), tức p = 18 biến. Hệ quả cần lưu ý: ma trận tương quan sẽ có khoảng 5 trị riêng bằng hoặc gần bằng 0 (ứng với 5 quan hệ tuyến tính trên), và nhóm biến kết quả – bàn thắng được tính lặp nên có trọng lượng lớn trong thành phần chính đầu tiên.
+
+```{r ma-tran-du-lieu}
+X <- as.matrix(laliga[, !(names(laliga) %in% c("Team", "Matches"))])
+rownames(X) <- laliga$Team
+n <- nrow(X)
+p <- ncol(X)
+c(n = n, p = p)
+```
+
+### Giá trị ngoại lai
+
+Ngoại lai được xét ở hai bước: **trước chuẩn hóa** (trên thang đo gốc của từng biến) và **sau chuẩn hóa** (trên giá trị $z_{jk}=(x_{jk}-\bar x_k)/\sqrt{s_{kk}}$, là thang đo mà PCA trên ma trận tương quan sử dụng).
+
+```{r thong-ke-co-ban}
+xbar <- colMeans(X)
+s_kk <- apply(X, 2, var)
+```
+
+#### Trước chuẩn hóa
+
+##### Boxplot từng biến trên thang đo gốc
+
+```{r boxplot-goc, fig.width=12, fig.height=7}
+par(mfrow = c(3, 6), mar = c(2, 3, 2.5, 0.5))
+for (k in 1:p) {
+  bp <- boxplot(X[, k], main = colnames(X)[k], cex.main = 0.75, col = "lightblue", cex.axis = 0.7)
+  vuot <- which(X[, k] %in% bp$out)
+  if (length(vuot) > 0) {
+    text(rep(1, length(vuot)), X[vuot, k], labels = rownames(X)[vuot], pos = 4, cex = 0.55, xpd = TRUE)
+  }
+}
+par(mfrow = c(1, 1))
+```
+
+Mỗi biến được vẽ trên thang đo riêng của nó (điểm, số trận, số bàn, số cú sút…), các điểm nằm ngoài râu (vượt 1.5·IQR) được ghi tên đội.
+
+```{r iqr-goc}
+ds_vuot <- data.frame(Bien = character(0), Doi = character(0), Gia_tri = numeric(0))
+for (k in 1:p) {
+  # giá trị nằm ngoài râu của boxplot (cách hộp quá 1.5 lần khoảng tứ phân vị)
+  vuot <- which(X[, k] %in% boxplot.stats(X[, k])$out)
+  if (length(vuot) > 0) {
+    ds_vuot <- rbind(ds_vuot, data.frame(Bien = colnames(X)[k], Doi = rownames(X)[vuot],
+                                         Gia_tri = X[vuot, k]))
+  }
+}
+rownames(ds_vuot) <- NULL
+ds_vuot
+sort(table(ds_vuot$Doi), decreasing = TRUE)
+```
+
+Có `r nrow(ds_vuot)` giá trị (thuộc `r length(unique(ds_vuot$Doi))` đội) nằm ngoài râu boxplot (vượt 1.5·IQR) trên thang đo gốc. Phần lớn thuộc về `r paste(names(sort(table(ds_vuot$Doi), decreasing = TRUE))[1:3], collapse = ", ")` — các đội đứng đầu với điểm số, bàn thắng, cú sút, kiến tạo vượt xa phần còn lại (Barcelona và Atlético Madrid còn có số trận hòa thấp bất thường, chỉ `r laliga$Draws[laliga$Team == "Barcelona"]` trận). Trường hợp còn lại là Deportivo với `r laliga$Draws[laliga$Team == "Deportivo"]` trận hòa, cao vượt trội so với các đội khác. Đây là thành tích thật của mùa giải (một giải đấu thường có vài đội vượt trội), không phải lỗi dữ liệu; quy tắc IQR chỉ đánh dấu để xem xét chứ không phải căn cứ để loại.
+
+#### Khoảng cách Mahalanobis trên dữ liệu gốc
+
+Khoảng cách $d_j^2=(\mathbf x_j-\bar{\mathbf x})'\mathbf S^{-1}(\mathbf x_j-\bar{\mathbf x})$ cần ma trận nghịch đảo $\mathbf S^{-1}$:
+
+```{r hang-ma-tran}
+S <- cov(X)
+qr(S)$rank
+```
+
+Ma trận $\mathbf S$ của `r p` biến chỉ có hạng `r qr(S)$rank` < `r p` do các quan hệ tuyến tính ở trên, nên **không khả nghịch**. Vì năm biến `Points`, `Loses`, `Difference.goals`, `Percentage.scored.goals`, `Percentage.conceded.goals` được tính từ các biến khác (không mang thêm thông tin), ta tính $d_j^2$ trên **13 biến còn lại** — các biến này không phụ thuộc tuyến tính nên ma trận hiệp phương sai khả nghịch.
+
+```{r mahalanobis, fig.width=9, fig.height=4.5}
+bien_dan_xuat <- c("Points", "Loses", "Difference.goals",
+                   "Percentage.scored.goals", "Percentage.conceded.goals")
+X_dl <- X[, !(colnames(X) %in% bien_dan_xuat)]
+p_dl <- ncol(X_dl)
+S_dl <- cov(X_dl)
+qr(S_dl)$rank
+
+Xc_dl <- X_dl - rep(1, n) %*% t(colMeans(X_dl))
+d2 <- rowSums((Xc_dl %*% solve(S_dl)) * Xc_dl)        # d_j^2 cho từng đội
+nguong_95  <- qchisq(0.95, df = p_dl)
+nguong_995 <- qchisq(0.995, df = p_dl)
+can_tren   <- (n - 1)^2 / n                             # giá trị lớn nhất có thể của d_j^2
+c(chi2_095 = nguong_95, chi2_0995 = nguong_995, can_tren_d2 = can_tren)
+round(sort(d2, decreasing = TRUE), 2)
+
+par(mar = c(9, 4, 3, 1))
+barplot(sort(d2, decreasing = TRUE), las = 2, cex.names = 0.75, col = "lightsteelblue",
+        border = NA, ylim = c(0, nguong_995 * 1.05), ylab = expression(d[j]^2),
+        main = "Khoảng cách Mahalanobis của các đội (13 biến, dữ liệu gốc)")
+abline(h = c(nguong_95, nguong_995), lty = 2, col = c("orange", "firebrick"))
+abline(h = can_tren, lty = 3, col = "grey30")
+legend("topright", bty = "n", cex = 0.8, lty = c(2, 2, 3),
+       col = c("orange", "firebrick", "grey30"),
+       legend = c("chi2_13(0.95)", "chi2_13(0.995)", "(n-1)^2/n"))
+```
+
+- Không đội nào có $d_j^2$ vượt $\chi^2_{`r p_dl`}(0.95)=$ `r round(nguong_95, 2)` hay $\chi^2_{`r p_dl`}(0.995)=$ `r round(nguong_995, 2)`; lớn nhất là `r names(which.max(d2))` (`r round(max(d2), 2)`), nhỏ nhất là `r names(which.min(d2))` (`r round(min(d2), 2)`).
+- Cần lưu ý cỡ mẫu rất nhỏ so với số biến (n = `r n`, p = `r p_dl`): khi dùng $\mathbf S$ tính từ chính mẫu, $d_j^2$ không thể vượt $(n-1)^2/n=$ `r round(can_tren, 2)` (đường chấm), thấp hơn cả hai phân vị khi-bình-phương, và xấp xỉ $\chi^2_p$ chỉ đáng tin khi $n$ và $n-p$ đủ lớn. Vì vậy ở đây chỉ nên so sánh $d_j^2$ giữa các đội với nhau: các giá trị khá đồng đều, không đội nào tách hẳn khỏi phần còn lại.
+- Các đội có $d_j^2$ lớn nhất gồm cả đội đầu bảng (`r paste(intersect(names(sort(d2, decreasing = TRUE))[1:4], c("Barcelona", "Real Madrid")), collapse = ", ")`) lẫn những đội có tổ hợp thống kê khác thường (ví dụ Deportivo với `r laliga$Draws[laliga$Team == "Deportivo"]` trận hòa), đều là thành tích thật trong mùa giải.
+
+#### Sau chuẩn hóa
+
+##### Boxplot các biến đã chuẩn hóa
+
+```{r boxplot-chuan-hoa, fig.width=10, fig.height=5}
+Z <- (X - rep(1, n) %*% t(xbar)) / (rep(1, n) %*% t(sqrt(s_kk)))   # giá trị chuẩn hóa
+par(mar = c(11, 4, 3, 1))
+boxplot(Z, las = 2, col = "lightblue", cex.axis = 0.75,
+        main = "Boxplot các biến đã chuẩn hóa", ylab = "Giá trị chuẩn hóa z")
+abline(h = c(-3.5, 0, 3.5), lty = c(3, 2, 3), col = c("firebrick", "grey40", "firebrick"))
+```
+
+Sau chuẩn hóa, mọi biến có trung bình 0 và độ lệch chuẩn 1 nên so sánh được trên cùng một trục. Các điểm nằm cao hẳn ở `Goals.scored`, `Shots`, `Assistances`, `Points`… vẫn là các đội đứng đầu; tất cả đều nằm trong khoảng ±3.5 (đường chấm đỏ).
+
+##### Giá trị chuẩn hóa
+
+```{r z-lon-nhat}
+round(apply(abs(Z), 2, max), 2)
+sum(abs(Z) > 3.5)
+# các đội có |z| lớn nhất ở từng biến
+data.frame(Bien = colnames(Z),
+           Doi = rownames(Z)[apply(abs(Z), 2, which.max)],
+           z_max = round(apply(abs(Z), 2, max), 2),
+           row.names = NULL)
+```
+
+Không có giá trị chuẩn hóa nào vượt 3.5 (lớn nhất là `r round(max(abs(Z)), 2)`) → không có giá trị bất thường theo từng biến. Các giá trị lớn nhất chủ yếu thuộc về `r paste(names(sort(table(rownames(Z)[apply(abs(Z), 2, which.max)]), decreasing = TRUE))[1:2], collapse = " và ")`. Chuẩn hóa chỉ dịch chuyển và co giãn từng biến nên không làm thay đổi vị trí tương đối giữa các đội (boxplot của $z$ có cùng hình dạng, quy tắc 1.5·IQR trên $z$ đánh dấu đúng `r nrow(ds_vuot)` giá trị như trên dữ liệu gốc). Khác biệt nằm ở tiêu chí: quy tắc IQR đánh dấu rộng để xem xét, còn ngưỡng $|z|>3.5$ chỉ coi là bất thường những giá trị cách trung bình hơn 3.5 độ lệch chuẩn — không giá trị nào thỏa.
+
+##### Khoảng cách Mahalanobis trên dữ liệu chuẩn hóa
+
+```{r mahalanobis-chuan-hoa}
+Z_dl <- Z[, colnames(X_dl)]
+d2_z <- rowSums((Z_dl %*% solve(cov(Z_dl))) * Z_dl)
+round(sort(d2_z, decreasing = TRUE), 2)
+max(abs(d2_z - d2))
+```
+
+Khoảng cách Mahalanobis tính trên dữ liệu chuẩn hóa **trùng hoàn toàn** với dữ liệu gốc (sai lệch lớn nhất `r format(max(abs(d2_z - d2)), digits = 2)`): vì $\mathbf z_j=\mathbf D^{-1/2}(\mathbf x_j-\bar{\mathbf x})$ và $\text{cov}(\mathbf z)=\mathbf D^{-1/2}\mathbf S\mathbf D^{-1/2}$, nên $\mathbf z_j'[\text{cov}(\mathbf z)]^{-1}\mathbf z_j=(\mathbf x_j-\bar{\mathbf x})'\mathbf S^{-1}(\mathbf x_j-\bar{\mathbf x})$ — khoảng cách Mahalanobis không phụ thuộc đơn vị đo. Kết luận về ngoại lai nhiều chiều vì vậy giống nhau trước và sau chuẩn hóa.
+
+#### Kết luận về ngoại lai
+
+| Tiêu chí | Trước chuẩn hóa | Sau chuẩn hóa |
+|---|---|---|
+| Từng biến | `r nrow(ds_vuot)` giá trị vượt 1.5·IQR, chủ yếu của các đội đầu bảng | Không giá trị nào có $|z|>3.5$ (lớn nhất `r round(max(abs(Z)), 2)`) |
+| Nhiều chiều (Mahalanobis, 13 biến) | Không đội nào vượt $\chi^2_{`r p_dl`}(0.95)$; lớn nhất `r names(which.max(d2))` (`r round(max(d2), 2)`) | Giống hệt trước chuẩn hóa |
+
+Các giá trị bị quy tắc IQR đánh dấu đều là thành tích thật (chủ yếu của các đội đầu bảng); theo ngưỡng $|z|>3.5$ và theo khoảng cách Mahalanobis thì không có giá trị hay đội nào bất thường, và kết luận này không đổi dù xét trên dữ liệu gốc hay dữ liệu chuẩn hóa → không có đội nào là ngoại lai cần loại, **giữ nguyên toàn bộ `r n` đội** cho phân tích.
+
+### Độ lệch chuẩn và tương quan giữa các biến
+
+#### Độ lệch chuẩn từng biến
+
+```{r do-lech-chuan}
+bang(data.frame(Bien = colnames(X),
+                Trung_binh = round(xbar, 2),
+                Do_lech_chuan = round(sqrt(s_kk), 3),
+                row.names = NULL)[order(sqrt(s_kk), decreasing = TRUE), ], digits = 3)
+round(max(sqrt(s_kk)) / min(sqrt(s_kk)))
+```
+
+Độ lệch chuẩn chênh lệch rất lớn giữa các biến: lớn nhất là `r names(which.max(s_kk))` (`r round(max(sqrt(s_kk)), 2)`) và `r names(sort(s_kk, decreasing = TRUE))[2]` (`r round(sort(sqrt(s_kk), decreasing = TRUE)[2], 2)`), nhỏ nhất là `r names(which.min(s_kk))` (`r round(min(sqrt(s_kk)), 3)`) — gấp khoảng `r round(max(sqrt(s_kk)) / min(sqrt(s_kk)))` lần. Chênh lệch này chủ yếu do **đơn vị đo khác nhau** (số cú sút, số lần phạm lỗi tính theo hàng trăm; tỷ lệ phần trăm bàn thắng chỉ khoảng 1–3) chứ không phản ánh mức độ quan trọng của biến. Nếu làm PCA trên $\mathbf S$, các thành phần chính đầu sẽ bị chi phối bởi các biến có phương sai lớn như `Shots`, `Fouls.made`, `Shots.on.goal` → cần chuẩn hóa, tức làm PCA trên ma trận tương quan $\mathbf R$.
+
+#### Ma trận tương quan mẫu R
+
+```{r tuong-quan, fig.width=9, fig.height=9}
+D_can <- diag(1 / sqrt(s_kk))
+R <- D_can %*% S %*% D_can
+dimnames(R) <- list(colnames(X), colnames(X))
+corrplot::corrplot(R, method = "color", type = "upper", addCoef.col = "black",
+                   number.cex = 0.5, tl.col = "black", tl.cex = 0.7)
+```
+
+- Nhóm "thành tích tốt" (`Points`, `Wins`, `Goals.scored`, `Difference.goals`, `Shots`, `Shots.on.goal`, `Assistances`, `Matches.without.conceding`) tương quan dương rất mạnh với nhau.
+- Nhóm này tương quan âm mạnh với `Loses`, `Goals.conceded`, `Percentage.conceded.goals`, và tương quan âm với `Fouls.made`, `Yellow.cards`.
+- `Draws`, `Red.cards`, `Penalties.scored`, `Offsides` có tương quan yếu hơn với phần còn lại.
+
+**Các cặp biến tương quan rất cao.** Liệt kê các cặp có $|r_{ik}| > 0.9$ trong $\mathbf R$:
+
+```{r cap-tuong-quan-cao}
+chi_so <- which(upper.tri(R) & abs(R) > 0.9, arr.ind = TRUE)
+cap_cao <- data.frame(Bien_1 = rownames(R)[chi_so[, 1]],
+                      Bien_2 = colnames(R)[chi_so[, 2]],
+                      r = R[chi_so])
+cap_cao <- cap_cao[order(-abs(cap_cao$r)), ]
+rownames(cap_cao) <- NULL
+bang(cap_cao, digits = 4)
+```
+
+Có `r nrow(cap_cao)` cặp biến với $|r| > 0.9$, nhưng hai cặp đứng đầu khác hẳn phần còn lại:
+
+- $r$(`Goals.scored`, `Percentage.scored.goals`) = `r sprintf("%.4f", R["Goals.scored", "Percentage.scored.goals"])` và $r$(`Goals.conceded`, `Percentage.conceded.goals`) = `r sprintf("%.4f", R["Goals.conceded", "Percentage.conceded.goals"])` — bằng 1 đến 4 chữ số thập phân. Tỷ số `Goals.scored` / `Percentage.scored.goals` (và tương tự cho bàn thua) luôn xấp xỉ `r laliga$Matches[1]` (từ `r sprintf("%.2f", min(laliga$Goals.scored / laliga$Percentage.scored.goals))` đến `r sprintf("%.2f", max(laliga$Goals.scored / laliga$Percentage.scored.goals))`): biến "phần trăm" thực chất là số bàn trung bình mỗi trận, tức số bàn chia cho `r laliga$Matches[1]` trận rồi làm tròn, nên mỗi cặp **chứa cùng một thông tin, chỉ khác đơn vị**.
+- Các cặp còn lại, dù tương quan cao (ví dụ $r$(`Points`, `Wins`) = `r sprintf("%.4f", R["Points", "Wins"])`, $r$(`Shots`, `Shots.on.goal`) = `r sprintf("%.4f", R["Shots", "Shots.on.goal"])`), vẫn mang thông tin riêng: `Points` còn phụ thuộc `Draws`, số cú sút trúng đích không tỷ lệ cố định với tổng số cú sút. Đây là mối liên hệ thực chất giữa các khía cạnh thành tích mà PCA cần tóm tắt, nên không loại.
+
+Khi giữ cả hai biến của một cặp $r \approx 1$, thông tin về bàn thắng/bàn thua bị **tính hai lần**: trên $\mathbf R$ mỗi biến có phương sai 1, nên cặp này đóng góp phương sai gấp đôi cho cùng một hướng, có thể làm tăng tỷ lệ phương sai mà thành phần chính chứa hướng đó giải thích. Mặt khác, đề bài yêu cầu dùng đủ các biến. Vì vậy bài phân tích chạy song song **hai kịch bản**:
+
+- **Kịch bản 18 biến** (kịch bản chính, theo đúng đề bài): mọi biến thống kê trừ `Matches`.
+- **Kịch bản 16 biến**: với mỗi cặp $r \approx 1$ chỉ giữ một biến — giữ `Goals.scored`, `Goals.conceded` (số bàn, dễ diễn giải hơn) và bỏ hai biến tỷ lệ phần trăm.
+
+Phân tích chi tiết được trình bày cho kịch bản 18 biến; kết quả của kịch bản 16 biến được đặt cạnh để so sánh ở các bước chính (trị riêng, tương quan, contribution, cos², số thành phần giữ lại, ý nghĩa), nhằm trả lời: việc tính hai lần thông tin này có làm thay đổi kết luận PCA hay không.
+
+```{r kich-ban-16-bien}
+bien_phan_tram <- c("Percentage.scored.goals", "Percentage.conceded.goals")
+X16 <- X[, !(colnames(X) %in% bien_phan_tram)]
+p16 <- ncol(X16)
+c(p_18 = p, p_16 = p16)
+```
+
+**Chọn ma trận R:** các biến có đơn vị và độ lớn khác nhau rất nhiều (độ lệch chuẩn của `Shots` ≈ `r round(sqrt(s_kk["Shots"]), 1)`, của `Percentage.conceded.goals` ≈ `r round(sqrt(s_kk["Percentage.conceded.goals"]), 2)`). Nếu làm PCA trên $\mathbf S$, các biến có phương sai lớn như `Shots`, `Fouls.made` sẽ chi phối các thành phần chính. Vì vậy PCA được thực hiện trên **ma trận tương quan mẫu R**, tương đương với PCA trên các biến đã chuẩn hóa $z_{jk}$.
+
+## Câu (a) — PCA trên ma trận tương quan
+
+### Các cặp trị riêng – vectơ riêng của R
+
+```{r tri-rieng}
+eig_R <- eigen(R)
+lambda_hat <- eig_R$values
+V_hat <- eig_R$vectors
+dimnames(V_hat) <- list(colnames(X), paste0("v", 1:p))
+
+# vectơ riêng chỉ xác định đến dấu: chọn dấu để dễ đọc
+# (Points dương trên PC1, Matches.without.conceding dương trên PC2, Draws dương trên PC3)
+if (V_hat["Points", 1] < 0) V_hat[, 1] <- -V_hat[, 1]
+if (V_hat["Matches.without.conceding", 2] < 0) V_hat[, 2] <- -V_hat[, 2]
+if (V_hat["Draws", 3] < 0) V_hat[, 3] <- -V_hat[, 3]
+
+round(lambda_hat, 4)
+sum(lambda_hat)
+```
+
+$\hat\lambda_1=$ `r round(lambda_hat[1], 3)`, $\hat\lambda_2=$ `r round(lambda_hat[2], 3)`, $\hat\lambda_3=$ `r round(lambda_hat[3], 3)`, $\hat\lambda_4=$ `r round(lambda_hat[4], 3)`, … Tổng các trị riêng bằng `r round(sum(lambda_hat), 4)` $=\text{tr}(\mathbf R)=p$. Có `r sum(lambda_hat < 1e-3)` trị riêng gần bằng 0 (< 0.001), đúng với các quan hệ tuyến tính giữa các biến đã nêu: theo các hướng đó dữ liệu gần như không biến thiên.
+
+Kiểm tra $\hat{\mathbf V}'\hat{\mathbf V}=\mathbf I$ và $\hat{\mathbf V}'\mathbf R\hat{\mathbf V}=\text{diag}(\hat\lambda_1,\dots,\hat\lambda_p)$:
+
+```{r kiem-tra-truc-chuan}
+max(abs(t(V_hat) %*% V_hat - diag(p)))
+max(abs(t(V_hat) %*% R %*% V_hat - diag(lambda_hat)))
+```
+
+Cả hai sai lệch đều xấp xỉ 0 → các vectơ riêng trực chuẩn và chéo hóa $\mathbf R$.
+
+### Các thành phần chính mẫu
+
+Thành phần chính mẫu thứ $i$ trên các biến chuẩn hóa: $\hat y_i=\hat{\mathbf v}_i'\mathbf z=\hat v_{i1}z_1+\dots+\hat v_{ip}z_p$, với $\text{var}(\hat y_i)=\hat\lambda_i$ và $\text{cov}(\hat y_i,\hat y_k)=0$, $i\ne k$. Hệ số của ba thành phần đầu:
+
+```{r he-so-3-tpc}
+bang(data.frame(Bien = colnames(X), V_hat[, 1:3], row.names = NULL), digits = 3)
+```
+
+Viết lại thành công thức tổ hợp tuyến tính của ba thành phần chính đầu ($z_{\text{tên biến}}$ là biến đã chuẩn hóa):
+
+```{r cong-thuc-tpc, results='asis', echo=FALSE}
+for (i in 1:3) {
+  so_hang <- paste0(sprintf("%+.3f", V_hat[, i]), "\\,z_{\\text{", colnames(X), "}}")
+  dong <- character(0)
+  for (k in seq(1, p, by = 3)) {
+    dong <- c(dong, paste(so_hang[k:min(k + 2, p)], collapse = " "))
+  }
+  cat("$$\n\\begin{aligned}\n\\hat y_", i, " ={}& ", paste(dong, collapse = "\\\\\n&"),
+      "\n\\end{aligned}\n$$\n\n", sep = "")
+}
+```
+
+$\hat y_1$ có hệ số khá đều nhau về độ lớn trên hầu hết các biến, chia thành hai nhóm dấu (kết quả tốt – tấn công dương; thua – bàn thua – phạm lỗi âm). $\hat y_2$ có hệ số lớn nhất ở `Matches.without.conceding` (dương) và nhóm `Goals.conceded`, `Offsides`, `Red.cards`, `Shots` (âm). $\hat y_3$ tập trung vào `Draws` (dương) và `Fouls.made`, `Yellow.cards` (âm). Ý nghĩa cụ thể được phân tích qua tương quan, contribution và cos² dưới đây.
+
+Scores của từng đội: $\hat{\mathbf Y}=\mathbf Z\hat{\mathbf V}$.
+
+```{r scores}
+Y_hat <- Z %*% V_hat
+colnames(Y_hat) <- paste0("y", 1:p)
+round(Y_hat[, 1:3], 3)
+round(diag(t(Y_hat) %*% Y_hat / (n - 1))[1:5], 4)
+```
+
+Phương sai mẫu của các cột scores bằng đúng $\hat\lambda_1,\hat\lambda_2,\dots$ → $\text{var}(\hat y_i)=\hat\lambda_i$.
+
+### Hệ số tương quan giữa thành phần chính và biến gốc (correlation loadings)
+
+Trên ma trận tương quan ($s_{kk}=1$ với biến chuẩn hóa): $r_{\hat y_i,z_k}=\hat v_{ik}\sqrt{\hat\lambda_i}$.
+
+```{r tuong-quan-pc-bien}
+r_y_x <- matrix(0, p, 3, dimnames = list(colnames(X), paste0("y", 1:3)))
+for (i in 1:3) {
+  r_y_x[, i] <- V_hat[, i] * sqrt(lambda_hat[i])
+}
+bang(data.frame(Bien = colnames(X), round(r_y_x, 3), row.names = NULL), digits = 3)
+```
+
+Ví dụ thay số: $r_{\hat y_1,\text{Points}}=\hat v_{1,\text{Points}}\sqrt{\hat\lambda_1}=`r sprintf("%.3f", V_hat["Points",1])`\times\sqrt{`r sprintf("%.3f", lambda_hat[1])`}=`r sprintf("%.3f", r_y_x["Points",1])`$; $r_{\hat y_2,\text{Matches.without.conceding}}=`r sprintf("%.3f", V_hat["Matches.without.conceding",2])`\times\sqrt{`r sprintf("%.3f", lambda_hat[2])`}=`r sprintf("%.3f", r_y_x["Matches.without.conceding",2])`$; $r_{\hat y_3,\text{Draws}}=`r sprintf("%.3f", V_hat["Draws",3])`\times\sqrt{`r sprintf("%.3f", lambda_hat[3])`}=`r sprintf("%.3f", r_y_x["Draws",3])`$.
+
+```{r tuong-quan-sap-xep}
+# các biến tương quan mạnh nhất (trị tuyệt đối) với từng thành phần
+for (i in 1:3) {
+  thu_tu <- order(abs(r_y_x[, i]), decreasing = TRUE)[1:6]
+  cat("y", i, ": ", paste0(rownames(r_y_x)[thu_tu], " (", sprintf("%.2f", r_y_x[thu_tu, i]), ")", collapse = ", "), "\n", sep = "")
+}
+```
+
+- **$\hat y_1$:** tương quan rất mạnh (|r| > 0.9) với `Difference.goals` (`r sprintf("%.2f", r_y_x["Difference.goals",1])`), `Points` (`r sprintf("%.2f", r_y_x["Points",1])`), `Wins` (`r sprintf("%.2f", r_y_x["Wins",1])`), `Goals.scored`, `Assistances`, và cùng độ lớn nhưng ngược dấu với `Loses` (`r sprintf("%.2f", r_y_x["Loses",1])`); tương quan mạnh với `Shots.on.goal`, `Shots`, `Matches.without.conceding` (dương) và `Yellow.cards`, `Goals.conceded`, `Fouls.made` (âm). $\hat y_1$ **chủ yếu phụ thuộc vào nhóm biến kết quả – bàn thắng – tấn công**, đối lập với nhóm thua – bàn thua – phạm lỗi.
+- **$\hat y_2$:** tương quan dương mạnh nhất với `Matches.without.conceding` (`r sprintf("%.2f", r_y_x["Matches.without.conceding",2])`) và âm với `Offsides` (`r sprintf("%.2f", r_y_x["Offsides",2])`), `Red.cards` (`r sprintf("%.2f", r_y_x["Red.cards",2])`), `Goals.conceded` (`r sprintf("%.2f", r_y_x["Goals.conceded",2])`), `Shots` (`r sprintf("%.2f", r_y_x["Shots",2])`), `Penalties.scored`, `Shots.on.goal` — các tương quan ở mức trung bình (|r| khoảng 0.4–0.6). Trong khi đó `Points`, `Wins`, `Difference.goals` gần như không tương quan với $\hat y_2$.
+- **$\hat y_3$:** tương quan dương mạnh với `Draws` (`r sprintf("%.2f", r_y_x["Draws",3])`), âm với `Fouls.made` (`r sprintf("%.2f", r_y_x["Fouls.made",3])`) và `Yellow.cards` (`r sprintf("%.2f", r_y_x["Yellow.cards",3])`); các tương quan còn lại đều yếu.
+
+```{r heatmap-tuong-quan, fig.width=7, fig.height=9}
+corrplot::corrplot(r_y_x, is.corr = FALSE, method = "color", col.lim = c(-1, 1),
+                   col = colorRampPalette(c("#B85C5C", "white", "#3F7EAD"))(200),
+                   addCoef.col = "black", number.cex = 0.8, tl.col = "black", tl.cex = 0.8,
+                   tl.srt = 0, cl.pos = "b", cl.ratio = 0.08, cl.cex = 0.8, cl.length = 5,
+                   title = "Correlation loadings: PC1 – PC3", mar = c(0, 0, 2, 0))
+```
+
+Heatmap cho thấy rõ cột PC1 gần như toàn bộ là màu đậm (xanh với nhóm thành tích tốt, đỏ với nhóm thua – bàn thua – phạm lỗi), trong khi cột PC2 và PC3 chỉ đậm ở vài biến: PC2 ở `Matches.without.conceding` và nhóm bàn thua – thẻ đỏ – việt vị, PC3 ở `Draws` và `Fouls.made`.
+
+### Đóng góp của từng biến vào thành phần chính (contribution)
+
+Đóng góp của biến $z_k$ vào thành phần chính $\hat y_i$: $\text{Contribution}_{ik}=100\,\hat v_{ik}^2$ (%). Vì $\hat{\mathbf v}_i$ có độ dài 1 nên tổng contribution của các biến trong mỗi thành phần bằng 100%; nếu mọi biến đóng góp như nhau thì mỗi biến chiếm $100/p=$ `r round(100/p, 2)`%.
+
+```{r contribution, fig.width=11, fig.height=4.5}
+contrib <- 100 * V_hat[, 1:3]^2
+colnames(contrib) <- paste0("y", 1:3)
+bang(data.frame(Bien = colnames(X), round(contrib, 2), row.names = NULL), digits = 2)
+colSums(contrib)
+
+par(mfrow = c(1, 3), mar = c(11, 4, 3, 1))
+for (i in 1:3) {
+  barplot(sort(contrib[, i], decreasing = TRUE), las = 2, cex.names = 0.7, col = "lightsteelblue",
+          border = NA, ylab = "Contribution (%)", main = paste0("PC", i))
+  abline(h = 100 / p, lty = 2, col = "firebrick")
+}
+par(mfrow = c(1, 1))
+```
+
+Đường đỏ là mức trung bình `r round(100/p, 2)`%.
+
+- **PC1:** `r sum(contrib[, 1] > 100/p)` biến có contribution vượt mức trung bình, lớn nhất là `Difference.goals` (`r sprintf("%.2f", contrib["Difference.goals",1])`%), `Points` (`r sprintf("%.2f", contrib["Points",1])`%), `Wins` (`r sprintf("%.2f", contrib["Wins",1])`%) và chỉ cao hơn không nhiều so với các biến tiếp theo → PC1 được tạo nên từ **nhiều biến cùng lúc**, đúng với một thành phần tổng hợp.
+- **PC2:** đóng góp lớn nhất từ `Matches.without.conceding` (`r sprintf("%.2f", contrib["Matches.without.conceding",2])`%), `Offsides`, `Red.cards`, `Goals.conceded`, `Percentage.conceded.goals` (mỗi biến khoảng 11%), tiếp theo là `Shots`, `Penalties.scored`, `Shots.on.goal`; các biến kết quả (`Points`, `Wins`, `Difference.goals`) đóng góp gần 0.
+- **PC3:** gần như chỉ do hai biến `Draws` (`r sprintf("%.2f", contrib["Draws",3])`%) và `Fouls.made` (`r sprintf("%.2f", contrib["Fouls.made",3])`%), cộng thêm `Yellow.cards` (`r sprintf("%.2f", contrib["Yellow.cards",3])`%) — ba biến chiếm `r round(sum(contrib[c("Draws","Fouls.made","Yellow.cards"),3]))`% của PC3.
+
+### Chất lượng biểu diễn của từng biến (cos²)
+
+Chất lượng biểu diễn của biến $z_k$ trên thành phần $\hat y_i$ là bình phương hệ số tương quan: $\cos^2_{ik}=r^2_{\hat y_i,z_k}=\hat\lambda_i\hat v_{ik}^2$, tức tỷ lệ phương sai của $z_k$ được giải thích bởi $\hat y_i$. Tổng qua các thành phần giữ lại $Q_k=\sum_{i=1}^{3}\cos^2_{ik}$ cho biết phần phương sai của biến $z_k$ được biểu diễn trong không gian ba thành phần đầu (tổng qua tất cả $p$ thành phần bằng 1).
+
+```{r cos2}
+r2 <- r_y_x^2
+bang(data.frame(Bien = colnames(X), round(r2, 3),
+                Q_3_TPC = round(rowSums(r2), 3), row.names = NULL), digits = 3)
+```
+
+- PC1 biểu diễn rất tốt (cos² > 0.85) `Difference.goals`, `Points`, `Wins`, `Goals.scored`, `Assistances`, `Loses` — các biến kết quả và tấn công.
+- PC2 biểu diễn phần lớn nhất của `Offsides`, `Red.cards`, `Matches.without.conceding`, `Goals.conceded` (cos² khoảng `r sprintf("%.2f", min(r2[c("Offsides", "Red.cards", "Matches.without.conceding", "Goals.conceded"), 2]))`–`r sprintf("%.2f", max(r2[c("Offsides", "Red.cards", "Matches.without.conceding", "Goals.conceded"), 2]))`), PC3 biểu diễn phần lớn của `Draws` (`r sprintf("%.2f", r2["Draws",3])`) và `Fouls.made` (`r sprintf("%.2f", r2["Fouls.made",3])`).
+
+Xét tổng $Q_k$: ba thành phần đầu giải thích từ `r round(100*min(rowSums(r2)))`% (`r rownames(r2)[which.min(rowSums(r2))]`) đến `r round(100*max(rowSums(r2)))`% (`r rownames(r2)[which.max(rowSums(r2))]`) phương sai của từng biến. Các biến được biểu diễn kém nhất là `r paste(rownames(r2)[order(rowSums(r2))[1:2]], collapse = " và ")`: phần lớn biến thiên của chúng nằm ở các thành phần sau.
+
+### So sánh hai kịch bản (18 và 16 biến)
+
+Thực hiện PCA trên ma trận tương quan của 16 biến theo cùng cách, rồi đặt kết quả cạnh kịch bản 18 biến.
+
+```{r ss-tri-rieng}
+eig16 <- eigen(cor(X16))
+lambda16 <- eig16$values
+V16 <- eig16$vectors
+rownames(V16) <- colnames(X16)
+if (V16["Points", 1] < 0) V16[, 1] <- -V16[, 1]
+if (V16["Matches.without.conceding", 2] < 0) V16[, 2] <- -V16[, 2]
+if (V16["Draws", 3] < 0) V16[, 3] <- -V16[, 3]
+
+bang(data.frame(TPC = paste0("y", 1:6),
+                lambda_18 = round(lambda_hat[1:6], 3),
+                lambda_16 = round(lambda16[1:6], 3)), digits = 3)
+c(so_lambda_gan_0_18 = sum(lambda_hat < 1e-3), so_lambda_gan_0_16 = sum(lambda16 < 1e-3))
+```
+
+Bỏ hai biến tỷ lệ phần trăm làm $\hat\lambda_1$ giảm từ `r round(lambda_hat[1], 3)` xuống `r round(lambda16[1], 3)`, còn $\hat\lambda_2,\hat\lambda_3$ thay đổi ít. Số trị riêng gần 0 giảm từ `r sum(lambda_hat < 1e-3)` xuống `r sum(lambda16 < 1e-3)` vì hai quan hệ "gần tỷ lệ thuận" đã bị loại; ba quan hệ tuyến tính chính xác (`Points`, `Loses`, `Difference.goals`) vẫn còn.
+
+```{r ss-tuong-quan}
+chung <- colnames(X16)
+r16 <- matrix(0, p16, 3, dimnames = list(chung, paste0("y", 1:3, "_16")))
+for (i in 1:3) {
+  r16[, i] <- V16[, i] * sqrt(lambda16[i])
+}
+r18 <- r_y_x[chung, ]
+colnames(r18) <- paste0("y", 1:3, "_18")
+bang(data.frame(Bien = chung, round(r18, 2), round(r16, 2), row.names = NULL), digits = 2)
+round(apply(abs(r18 - r16), 2, max), 3)
+
+# độ tương đồng về hướng của PC1–PC3 trên 16 biến chung (cosin góc giữa hai vectơ hệ số)
+tuong_dong <- numeric(3)
+for (i in 1:3) {
+  a <- V_hat[chung, i]
+  b <- V16[chung, i]
+  tuong_dong[i] <- abs(sum(a * b)) / sqrt(sum(a^2) * sum(b^2))
+}
+round(tuong_dong, 4)
+```
+
+Hệ số tương quan của từng biến với PC1–PC3 ở hai kịch bản gần như trùng nhau (chênh lệch lớn nhất theo từng thành phần: `r paste(sprintf("%.3f", apply(abs(r18 - r16), 2, max)), collapse = ", ")`), độ tương đồng về hướng của PC1, PC2, PC3 lần lượt là `r paste(sprintf("%.3f", tuong_dong), collapse = ", ")` → ba thành phần chính đầu **gần như không đổi** khi bỏ hai biến tỷ lệ phần trăm.
+
+```{r ss-contribution-cos2}
+contrib16 <- 100 * V16[, 1:3]^2
+colnames(contrib16) <- paste0("Contrib_y", 1:3, "_16")
+contrib18 <- contrib[chung, ]
+colnames(contrib18) <- paste0("Contrib_y", 1:3, "_18")
+bang(data.frame(Bien = chung, round(contrib18, 2), round(contrib16, 2), row.names = NULL), digits = 2)
+
+Q16 <- rowSums(r16^2)
+bang(data.frame(Bien = chung, Q_18 = round(rowSums(r2[chung, ]), 3), Q_16 = round(Q16, 3),
+                row.names = NULL), digits = 3)
+```
+
+- **Contribution:** ở kịch bản 18 biến, `Goals.scored` và `Percentage.scored.goals` (cũng như cặp bàn thua) chia nhau phần đóng góp của cùng một thông tin; khi bỏ biến phần trăm, phần đó dồn về `Goals.scored`, `Goals.conceded`, và vì $\hat{\mathbf v}_i$ có ít phần tử hơn nên contribution của mọi biến còn lại đều tăng nhẹ (mức trung bình tăng từ `r round(100/p, 2)`% lên `r round(100/p16, 2)`%). Thứ tự các biến đóng góp nhiều nhất cho mỗi thành phần không đổi.
+- **cos² (tổng Q trên 3 thành phần):** chất lượng biểu diễn của từng biến ở hai kịch bản gần như bằng nhau; các biến được biểu diễn kém nhất vẫn là `Penalties.scored`, `Offsides`, `Red.cards`.
+
+### Ma trận hệ số tải và các đồ thị
+
+#### Barplot hệ số tải
+
+```{r barplot-loadings, fig.width=11, fig.height=4.5}
+par(mfrow = c(1, 3), mar = c(11, 4, 3, 1))
+for (i in 1:3) {
+  barplot(V_hat[, i], las = 2, col = "grey60", ylim = c(-0.7, 0.7), cex.names = 0.7,
+          main = paste0("PC", i, " loadings"))
+  abline(h = 0)
+}
+par(mfrow = c(1, 1))
+```
+
+- **PC1:** các cột tách thành hai phía rõ rệt, độ lớn khá đều nhau (≈ 0.15–0.29): phía dương là thắng, điểm, bàn thắng, sút, kiến tạo, giữ sạch lưới; phía âm là thua, bàn thua, phạm lỗi, thẻ vàng, thẻ đỏ và cả `Draws`.
+- **PC2:** cột dương nổi bật là `Matches.without.conceding`; phía âm là `Offsides`, `Red.cards`, `Goals.conceded`, `Shots`, `Penalties.scored` — các biến điểm số gần 0.
+- **PC3:** nổi bật `Draws` (dương) đối lập `Fouls.made`, `Yellow.cards` (âm).
+
+#### Đồ thị loading và vòng tròn tương quan
+
+```{r correlation-circle, fig.width=7, fig.height=7}
+plot(NA, xlim = c(-1.1, 1.1), ylim = c(-1.1, 1.1), asp = 1,
+     xlab = paste0("PC1 (", round(100 * lambda_hat[1] / p, 1), "%)"),
+     ylab = paste0("PC2 (", round(100 * lambda_hat[2] / p, 1), "%)"),
+     main = "Vòng tròn tương quan PC1 – PC2")
+symbols(0, 0, circles = 1, inches = FALSE, add = TRUE, fg = "grey60")
+abline(h = 0, v = 0, lty = 2, col = "grey70")
+arrows(0, 0, r_y_x[, 1], r_y_x[, 2], length = 0.06, col = "darkred")
+text(r_y_x[, 1], r_y_x[, 2], labels = colnames(X), cex = 0.6, pos = 3)
+```
+
+Mỗi mũi tên là một biến, tọa độ là tương quan của biến với PC1 và PC2. Mũi tên càng gần vòng tròn thì biến càng được hai thành phần đầu biểu diễn tốt.
+
+- Các biến kết quả (`Points`, `Wins`, `Difference.goals`) nằm sát trục PC1 phía dương và gần vòng tròn; `Loses` nằm đối xứng phía âm → PC1 gần như là trục kết quả thi đấu.
+- `Goals.scored`, `Shots`, `Assistances` lệch xuống dưới (PC2 âm), `Matches.without.conceding` lệch lên trên (PC2 dương): hai nhóm "tấn công" và "phòng ngự" của đội mạnh tách nhau theo PC2.
+- `Goals.conceded`, `Red.cards`, `Offsides` cùng nằm phía PC2 âm.
+
+#### Đồ thị score
+
+```{r score-plot, fig.width=8, fig.height=6.5}
+plot(Y_hat[, 1], Y_hat[, 2], pch = 1, col = "navy",
+     xlab = paste0("PC1 (", round(100 * lambda_hat[1] / p, 1), "%)"),
+     ylab = paste0("PC2 (", round(100 * lambda_hat[2] / p, 1), "%)"),
+     main = "Đồ thị score", xlim = range(Y_hat[, 1]) * 1.15)
+text(Y_hat[, 1], Y_hat[, 2], labels = rownames(X), pos = 4, cex = 0.65, col = "grey30")
+abline(h = 0, v = 0, lty = 2, col = "grey50")
+
+# thứ hạng theo điểm số so với score PC1
+data.frame(Doi = rownames(X), Points = laliga$Points,
+           y1 = round(Y_hat[, 1], 2), y2 = round(Y_hat[, 2], 2), row.names = NULL)
+cor(laliga$Points, Y_hat[, 1])
+```
+
+- **Theo PC1:** `r rownames(X)[order(Y_hat[,1], decreasing = TRUE)[1]]`, `r rownames(X)[order(Y_hat[,1], decreasing = TRUE)[2]]`, `r rownames(X)[order(Y_hat[,1], decreasing = TRUE)[3]]` nằm tách xa về phía dương, phần lớn các đội còn lại tụ ở phía âm gần nhau. Tương quan giữa score PC1 và số điểm cuối mùa là `r sprintf("%.3f", cor(laliga$Points, Y_hat[, 1]))` → thứ tự trên trục PC1 gần như trùng với bảng xếp hạng.
+- **Theo PC2:** `r rownames(X)[which.max(Y_hat[,2])]` có score PC2 cao nhất (đội giữ sạch lưới `r laliga$Matches.without.conceding[which.max(Y_hat[,2])]` trận, ít bàn thua); các đội nằm thấp nhất theo PC2 là `r paste(rownames(X)[order(Y_hat[,2])[1:2]], collapse = " và ")`.
+
+#### 95% mật độ ellipsoid và các thành phần chính
+
+Nếu ${\mathbf x}$ có phân phối chuẩn nhiều chiều thì $(\hat y_1,\hat y_2)$ xấp xỉ chuẩn với trung bình 0, không tương quan, phương sai $\hat\lambda_1,\hat\lambda_2$. Ellipse mật độ 95% trên mặt phẳng PC1–PC2 là tập các điểm thỏa
+
+$$\frac{\hat y_1^2}{\hat\lambda_1}+\frac{\hat y_2^2}{\hat\lambda_2}\le\chi^2_2(0.95),$$
+
+có tâm tại gốc, trục lớn theo hướng PC1 với nửa độ dài $\sqrt{\chi^2_2(0.95)\,\hat\lambda_1}$, trục nhỏ theo hướng PC2 với nửa độ dài $\sqrt{\chi^2_2(0.95)\,\hat\lambda_2}$. Hai mũi tên trên đồ thị là hai thành phần chính (hai trục của ellipse).
+
+```{r ellipse-95, fig.width=7.5, fig.height=6.5}
+chi2_95 <- qchisq(0.95, df = 2)
+nua_truc_1 <- sqrt(chi2_95 * lambda_hat[1])
+nua_truc_2 <- sqrt(chi2_95 * lambda_hat[2])
+goc <- seq(0, 2 * pi, length.out = 300)
+
+plot(Y_hat[, 1], Y_hat[, 2], pch = 19, col = "indianred", asp = 1,
+     xlim = range(c(Y_hat[, 1], -nua_truc_1, nua_truc_1)) * 1.3,
+     ylim = range(c(Y_hat[, 2], -nua_truc_2, nua_truc_2)) * 1.1,
+     xlab = paste0("PC1 (", round(100 * lambda_hat[1] / sum(lambda_hat), 1), "%)"),
+     ylab = paste0("PC2 (", round(100 * lambda_hat[2] / sum(lambda_hat), 1), "%)"),
+     main = "95% mật độ ellipsoid và các thành phần chính")
+lines(nua_truc_1 * cos(goc), nua_truc_2 * sin(goc), lwd = 2, col = "navy")
+arrows(-nua_truc_1, 0, nua_truc_1, 0, code = 3, length = 0.12, lwd = 2, col = "navy")
+arrows(0, -nua_truc_2, 0, nua_truc_2, code = 3, length = 0.12, lwd = 2, col = "navy")
+
+# các đội nằm ngoài ellipse 95%
+d2_pc <- Y_hat[, 1]^2 / lambda_hat[1] + Y_hat[, 2]^2 / lambda_hat[2]
+ngoai <- which(d2_pc > chi2_95)
+text(Y_hat[ngoai, 1], Y_hat[ngoai, 2], labels = rownames(X)[ngoai], pos = 4, cex = 0.7)
+c(nua_truc_1 = nua_truc_1, nua_truc_2 = nua_truc_2)
+c(so_ngoai_ellipse = length(ngoai), ky_vong = 0.05 * n)
+rownames(X)[ngoai]
+```
+
+Ellipse có tâm tại gốc (điểm trung bình), trục lớn nằm theo hướng PC1 với nửa độ dài `r sprintf("%.4f", nua_truc_1)` và trục nhỏ theo hướng PC2 với nửa độ dài `r sprintf("%.4f", nua_truc_2)`; tỷ số hai trục $\sqrt{\hat\lambda_1/\hat\lambda_2}=$ `r round(sqrt(lambda_hat[1] / lambda_hat[2]), 2)` cho thấy dữ liệu trải rộng theo PC1 nhiều hơn theo PC2. Có `r length(ngoai)` đội nằm ngoài ellipse (`r paste(rownames(X)[ngoai], collapse = ", ")`), so với khoảng `r round(0.05 * n, 1)` đội kỳ vọng nếu dữ liệu chuẩn. Với n = 20, ellipse chỉ là mốc tham khảo (bài không giả định chuẩn); các đội nằm ngoài là những đội có thành tích hoặc phong cách thi đấu khác biệt rõ so với phần còn lại của giải.
+
+#### Biplot
+
+```{r biplot, fig.width=8, fig.height=8}
+pc_laliga <- princomp(X, cor = TRUE)
+biplot(pc_laliga, choices = 1:2, col = c("grey40", "darkred"), cex = c(0.6, 0.6),
+       expand = 0.9, main = "Biplot PC1 – PC2")
+abline(h = 0, v = 0, lty = 2, col = "grey60")
+```
+
+Biplot vẽ chồng các đội (tên) và các biến (mũi tên). (Hướng của trục có thể đảo so với các đồ thị trên vì vectơ riêng xác định đến dấu.) Các đội nằm theo hướng của nhóm mũi tên thắng – điểm – bàn thắng là các đội đứng đầu; các đội nằm theo hướng mũi tên thua – bàn thua – thẻ phạt là các đội cuối bảng. Góc giữa hai mũi tên càng nhỏ thì hai biến tương quan càng mạnh (xấp xỉ): `Points`, `Wins`, `Difference.goals` gần như trùng hướng, ngược hẳn với `Loses`.
+
+**Kết luận câu (a):** PCA được thực hiện trên ma trận tương quan của p = `r p` biến thành tích (đã loại `Matches`), cho các trị riêng $\hat\lambda_1=$ `r round(lambda_hat[1], 3)`, $\hat\lambda_2=$ `r round(lambda_hat[2], 3)`, $\hat\lambda_3=$ `r round(lambda_hat[3], 3)`, … (`r sum(lambda_hat < 1e-3)` trị riêng gần 0 do các biến phụ thuộc tuyến tính). Thành phần chính thứ nhất gắn chặt với kết quả thi đấu và hiệu quả tấn công, thành phần thứ hai với khả năng giữ sạch lưới đối lập với bàn thua – thẻ đỏ – việt vị, thành phần thứ ba với số trận hòa đối lập với phạm lỗi – thẻ vàng.
+
+## Câu (b) — Số thành phần chính cần giữ lại
+
+### Tỷ số đóng góp vào phương sai suy rộng
+
+Trên ma trận tương quan, phương sai suy rộng $=\text{tr}(\mathbf R)=p=`r p`$; tỷ số đóng góp của thành phần thứ $i$ là $\hat\lambda_i/p$, tỷ lệ tích lũy $r_q=\sum_{k=1}^q\hat\lambda_k/p$.
+
+```{r ty-le-dong-gop}
+ty_le <- lambda_hat / p
+ty_le_tich_luy <- cumsum(lambda_hat) / p
+bang(data.frame(TPC = paste0("y", 1:8),
+                lambda_hat = round(lambda_hat[1:8], 4),
+                Ty_le_phan_tram = round(100 * ty_le[1:8], 2),
+                Tich_luy_phan_tram = round(100 * ty_le_tich_luy[1:8], 2)), digits = 4)
+```
+
+$\hat y_1$ giải thích `r round(100*ty_le[1], 2)`% phương sai suy rộng; hai thành phần đầu `r round(100*ty_le_tich_luy[2], 2)`%; ba thành phần đầu `r round(100*ty_le_tich_luy[3], 2)`%; bốn thành phần đầu `r round(100*ty_le_tich_luy[4], 2)`%.
+
+### Scree-plot
+
+```{r scree-plot, fig.width=10, fig.height=4}
+par(mfrow = c(1, 2))
+plot(1:p, lambda_hat, type = "b", pch = 19, xlab = "Thành phần chính",
+     ylab = expression(hat(lambda)[i]), main = "Scree plot")
+abline(h = 1, col = "red", lty = 2)
+plot(1:p, 100 * ty_le_tich_luy, type = "b", pch = 19, ylim = c(0, 100),
+     xlab = "Thành phần chính", ylab = "% tích lũy", main = "Cum. Scree plot")
+abline(h = c(80, 90), col = c("red", "blue"), lty = 2)
+par(mfrow = c(1, 1))
+```
+
+Trị riêng giảm rất mạnh từ $\hat\lambda_1$ xuống $\hat\lambda_2$, giảm tiếp đến $\hat\lambda_3$, rồi từ $\hat\lambda_4$ trở đi các trị riêng nhỏ (dưới 1) và giảm chậm, gần như nằm ngang. Đường đỏ ở mức 1 chỉ có ba trị riêng đầu nằm trên.
+
+### Lựa chọn số thành phần
+
+```{r chon-so-tpc}
+c(dat_70 = which(ty_le_tich_luy >= 0.70)[1],
+  dat_80 = which(ty_le_tich_luy >= 0.80)[1],
+  dat_90 = which(ty_le_tich_luy >= 0.90)[1],
+  Kaiser = sum(lambda_hat > 1))
+```
+
+1. **Tỷ lệ phương sai tích lũy:** cần `r which(ty_le_tich_luy >= 0.7)[1]` thành phần để đạt 70%, `r which(ty_le_tich_luy >= 0.8)[1]` thành phần để đạt 80% (hai thành phần đầu chỉ đạt `r round(100*ty_le_tich_luy[2], 2)`%, chưa tới ngưỡng) và `r which(ty_le_tich_luy >= 0.9)[1]` thành phần để đạt 90%.
+2. **Scree-plot:** đoạn dốc kết thúc ở thành phần thứ 3, sau đó đường gần như nằm ngang → giữ 3 thành phần.
+3. **Tiêu chuẩn Kaiser** (PCA trên R, giữ $\hat\lambda_q>1$): có `r sum(lambda_hat > 1)` trị riêng lớn hơn 1 → giữ `r sum(lambda_hat > 1)` thành phần.
+
+Ba tiêu chí cùng cho kết quả **giữ 3 thành phần chính**, giải thích `r round(100*ty_le_tich_luy[3], 2)`% phương sai suy rộng. Thành phần thứ tư ($\hat\lambda_4=$ `r round(lambda_hat[4], 3)` < 1) chỉ thêm `r round(100*ty_le[4], 2)`%.
+
+### So sánh hai kịch bản (18 và 16 biến)
+
+```{r ss-chon-so-tpc, fig.width=7, fig.height=4.5}
+tl16 <- lambda16 / p16
+tlt16 <- cumsum(lambda16) / p16
+bang(data.frame(
+  Chi_tieu = c("% PC1", "% PC2", "% PC3", "% tích lũy PC1–PC2", "% tích lũy PC1–PC3",
+               "Số TPC có lambda > 1", "Số TPC đạt 80%", "Số TPC đạt 90%"),
+  Kich_ban_18 = c(round(100 * ty_le[1:3], 2), round(100 * ty_le_tich_luy[2:3], 2),
+                  sum(lambda_hat > 1), which(ty_le_tich_luy >= 0.8)[1], which(ty_le_tich_luy >= 0.9)[1]),
+  Kich_ban_16 = c(round(100 * tl16[1:3], 2), round(100 * tlt16[2:3], 2),
+                  sum(lambda16 > 1), which(tlt16 >= 0.8)[1], which(tlt16 >= 0.9)[1])
+), digits = 2)
+
+plot(1:10, 100 * ty_le[1:10], type = "b", pch = 19, col = "navy", ylim = c(0, 70),
+     xlab = "Thành phần chính", ylab = "% phương sai giải thích",
+     main = "Scree plot (tỷ lệ phương sai) – hai kịch bản")
+lines(1:10, 100 * tl16[1:10], type = "b", pch = 17, lty = 2, col = "firebrick")
+legend("topright", bty = "n", legend = c("18 biến", "16 biến"),
+       col = c("navy", "firebrick"), pch = c(19, 17), lty = c(1, 2))
+```
+
+Hai đường scree gần như trùng nhau, cùng có khuỷu tay ở thành phần thứ 3. Kịch bản 16 biến có tỷ lệ của PC1 thấp hơn một chút (`r round(100 * tl16[1], 2)`% so với `r round(100 * ty_le[1], 2)`%) — ở kịch bản 18 biến, thông tin số bàn thắng/bàn thua bị tính hai lần nên PC1 (nơi các biến này có hệ số lớn) được "thổi phồng" nhẹ. Cả hai kịch bản đều có `r sum(lambda16 > 1)` trị riêng lớn hơn 1 và cần `r which(tlt16 >= 0.8)[1]` thành phần để vượt 80% → **cùng kết luận giữ 3 thành phần**, giải thích `r round(100 * ty_le_tich_luy[3], 2)`% (18 biến) và `r round(100 * tlt16[3], 2)`% (16 biến).
+
+**Kết luận câu (b):** Giữ lại **3 thành phần chính đầu tiên**: chúng giải thích `r round(100*ty_le_tich_luy[3], 2)`% tổng phương sai của `r p` biến (vượt ngưỡng 80%), là ba thành phần duy nhất có trị riêng lớn hơn 1 và nằm trên đoạn dốc của scree plot. Như vậy `r p` biến thống kê có thể thu gọn xuống 3 chiều mà vẫn giữ được khoảng `r round(100*ty_le_tich_luy[3])`% thông tin.
+
+## Câu (c) — Ý nghĩa của các thành phần chính được giữ lại
+
+```{r tong-hop-y-nghia}
+bang(data.frame(TPC = paste0("y", 1:3),
+                lambda_hat = round(lambda_hat[1:3], 3),
+                Ty_le_phan_tram = round(100 * ty_le[1:3], 2),
+                Tich_luy_phan_tram = round(100 * ty_le_tich_luy[1:3], 2)), digits = 3)
+```
+
+### Thành phần chính thứ nhất — sức mạnh tổng thể của đội
+
+$\hat y_1$ giải thích `r round(100*ty_le[1], 2)`% phương sai, gấp gần `r round(lambda_hat[1]/lambda_hat[2])` lần thành phần thứ hai. Hệ số của $\hat y_1$ có độ lớn khá đều trên gần như mọi biến, chia thành hai nhóm ngược dấu:
+
+- **Nhóm dương:** `Difference.goals`, `Points`, `Wins`, `Goals.scored`, `Percentage.scored.goals`, `Assistances`, `Shots.on.goal`, `Shots`, `Matches.without.conceding` — thắng nhiều, ghi nhiều bàn, tấn công tốt và phòng ngự chắc.
+- **Nhóm âm:** `Loses`, `Yellow.cards`, `Goals.conceded`, `Percentage.conceded.goals`, `Fouls.made`, và ở mức yếu hơn `Draws`, `Red.cards`.
+
+$\hat y_1$ vì vậy là **thành phần "sức mạnh tổng thể" (chất lượng đội bóng)**. Đội có điểm $\hat y_1$ cao có xu hướng thắng nhiều, ghi nhiều bàn, sút và kiến tạo nhiều, thua ít bàn và ít phạm lỗi, ít thẻ; đội có điểm thấp thì ngược lại. Score PC1 tương quan `r sprintf("%.3f", cor(laliga$Points, Y_hat[, 1]))` với số điểm cuối mùa: `r rownames(X)[order(Y_hat[,1], decreasing = TRUE)[1]]`, `r rownames(X)[order(Y_hat[,1], decreasing = TRUE)[2]]`, `r rownames(X)[order(Y_hat[,1], decreasing = TRUE)[3]]` có score cao nhất, `r rownames(X)[order(Y_hat[,1])[1]]` thấp nhất. Việc các đội phạm lỗi và nhận thẻ nhiều hơn nằm cùng phía với đội thua nhiều cho thấy các đội yếu thường phải phòng ngự nhiều hơn và phạm lỗi nhiều hơn.
+
+### Thành phần chính thứ hai — phong cách phòng ngự chặt và ít bàn thắng
+
+$\hat y_2$ giải thích thêm `r round(100*ty_le[2], 2)`%. Biến nổi bật duy nhất phía dương là `Matches.without.conceding` (r = `r sprintf("%.2f", r_y_x["Matches.without.conceding",2])`); phía âm là `Offsides`, `Red.cards`, `Goals.conceded`, `Shots`, `Penalties.scored`, `Shots.on.goal`, `Goals.scored`. Các biến kết quả (`Points`, `Wins`, `Difference.goals`) gần như không tương quan với $\hat y_2$, nên thành phần này **không đo đội mạnh hay yếu** mà đo **phong cách thi đấu**: sau khi đã tính đến sức mạnh tổng thể ở $\hat y_1$, $\hat y_2$ phân biệt các đội **giữ sạch lưới nhiều, ít bàn thua và ít bàn thắng, ít sút, ít việt vị, ít thẻ đỏ** (score cao) với các đội **chơi cởi mở**, sút nhiều, ghi và thủng lưới nhiều, việt vị và thẻ đỏ nhiều (score thấp). Ví dụ `r rownames(X)[which.max(Y_hat[,2])]` có score $\hat y_2$ cao nhất — một đội đứng đầu nhưng nổi bật về phòng ngự (`r laliga$Goals.conceded[which.max(Y_hat[,2])]` bàn thua, `r laliga$Matches.without.conceding[which.max(Y_hat[,2])]` trận sạch lưới) và ghi ít bàn hơn nhiều so với hai đội đầu bảng còn lại.
+
+### Thành phần chính thứ ba — xu hướng hòa và mức độ phạm lỗi
+
+$\hat y_3$ giải thích thêm `r round(100*ty_le[3], 2)`%. Hai nhóm ngược dấu: `Draws` (r = `r sprintf("%.2f", r_y_x["Draws",3])`) đối lập với `Fouls.made` (r = `r sprintf("%.2f", r_y_x["Fouls.made",3])`) và `Yellow.cards` (r = `r sprintf("%.2f", r_y_x["Yellow.cards",3])`); `Wins` có hệ số âm nhỏ. Đội có điểm $\hat y_3$ cao có xu hướng **hòa nhiều và chơi ít phạm lỗi, ít thẻ vàng**; đội có điểm thấp phạm lỗi nhiều, nhận nhiều thẻ vàng và ít hòa. Đội có score $\hat y_3$ cao nhất là `r rownames(X)[which.max(Y_hat[,3])]` (`r laliga$Draws[which.max(Y_hat[,3])]` trận hòa). Đây là thành phần **phong cách – kỷ luật**, không liên quan nhiều đến thứ hạng.
+
+### Kết luận
+
+**Kết luận câu (c):** PCA trên ma trận tương quan của `r p` biến thống kê thành tích La Liga cho thấy nên giữ **3 thành phần chính**, giải thích `r round(100*ty_le_tich_luy[3], 2)`% tổng phương sai:
+
+- $\hat y_1$ (`r round(100*ty_le[1], 2)`%) — **sức mạnh tổng thể**: điểm, số trận thắng, hiệu số, bàn thắng, sút, kiến tạo đối lập với số trận thua, bàn thua, phạm lỗi, thẻ vàng; gần như trùng với bảng xếp hạng.
+- $\hat y_2$ (`r round(100*ty_le[2], 2)`%) — **phong cách phòng ngự – cởi mở**: giữ sạch lưới đối lập với bàn thua, việt vị, thẻ đỏ, số cú sút; không phụ thuộc vào thứ hạng.
+- $\hat y_3$ (`r round(100*ty_le[3], 2)`%) — **xu hướng hòa – kỷ luật**: số trận hòa đối lập với số lần phạm lỗi và thẻ vàng.
+
+**So sánh hai kịch bản:** kịch bản 16 biến (chỉ giữ một biến trong mỗi cặp tương quan ≈ 1) cho cùng số thành phần cần giữ (3), cùng hướng các thành phần (độ tương đồng `r paste(sprintf("%.3f", tuong_dong), collapse = ", ")`) và cùng ý nghĩa như kịch bản 18 biến; khác biệt chủ yếu là PC1 giải thích ít hơn một chút (`r round(100 * tl16[1], 2)`% so với `r round(100 * ty_le[1], 2)`%) do không còn thông tin trùng lặp. Kết quả PCA vì vậy ổn định với việc chọn biến này, và kịch bản 16 biến phản ánh tỷ lệ phương sai sát thực tế hơn.
+
+Thành tích của các đội La Liga mùa giải này vì vậy được tóm tắt chủ yếu bởi một trục chất lượng đội bóng (chiếm khoảng hai phần ba biến thiên), cộng với hai trục phong cách thi đấu. Hạn chế: một số biến được tính trực tiếp từ biến khác nên trục sức mạnh tổng thể được "đếm" nhiều lần, làm $\hat\lambda_1$ lớn hơn; các biến `r paste(rownames(r2)[order(rowSums(r2))[1:2]], collapse = " và ")` chỉ được ba thành phần đầu biểu diễn khoảng `r round(100*rowSums(r2)[order(rowSums(r2))[1]])`%–`r round(100*rowSums(r2)[order(rowSums(r2))[2]])`% phương sai.

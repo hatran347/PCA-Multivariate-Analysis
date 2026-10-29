@@ -1,8 +1,11 @@
 ---
-title: "Principal Component Analysis - Multivariate Statistics"
+title: "BTVN Chương 5: Phân tích thành phần chính (PCA)"
+author: Nhóm 10
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
 output:
   html_document:
     toc: true
+    toc_float: true
     toc_depth: 3
 ---
 
@@ -54,6 +57,36 @@ lines <- vapply(lines, function(line) {
 content <- c(paste0("# ", title), "", lines)
 cat(knitr::knit_child(text = content, quiet = TRUE), sep = "\n")
 }
+```
+
+```{r thong-tin-html, echo=FALSE, results="asis"}
+cat('<div style="text-align:center; margin:1.5em 0 2em;">',
+    '<p style="margin:0;"><b>Môn học:</b> Thống kê nhiều chiều &nbsp;|&nbsp; <b>Giảng viên hướng dẫn:</b> TS. Nguyễn Thị Mộng Ngọc</p>',
+    '<p style="margin:0;"><b>Nhóm 10 – Học viên thực hiện:</b> Vũ Hà Thư (25C23004), Trần Việt Hà (25C23020)</p>',
+    '</div>', sep = "\n")
+# Bảng phân công dựng bằng HTML trực tiếp để hiển thị giống nhau trên mọi máy (không phụ thuộc kableExtra)
+cong_viec <- list(
+  c("Bài 5.7 – Dữ liệu stock-price: câu (a)–(d)",
+    "Bài La Liga – Thống kê thành tích các đội bóng: câu (a)–(c), gồm hai kịch bản 18 biến và 16 biến"),
+  c("Bài 5.8 – PCA và ảnh hưởng của đơn vị đo: câu (a)–(c)",
+    "Bài 5.11 – Dữ liệu an ninh lương thực tại châu Phi: câu (a)–(c)"))
+thanh_vien <- data.frame(ho_ten = c("Vũ Hà Thư", "Trần Việt Hà"), mshv = c("25C23004", "25C23020"))
+o_kieu  <- "border:1px solid #bbb; padding:8px 12px; vertical-align:top;"
+dau_kieu <- paste(o_kieu, "background:#f2f2f2; font-weight:bold; text-align:center; vertical-align:middle;")
+dong <- vapply(1:2, function(i) paste0(
+  "<tr>",
+  "<td style='", o_kieu, " text-align:center;'>", i, "</td>",
+  "<td style='", o_kieu, " white-space:nowrap;'>", thanh_vien$ho_ten[i], "</td>",
+  "<td style='", o_kieu, " text-align:center;'>", thanh_vien$mshv[i], "</td>",
+  "<td style='", o_kieu, "'><ul style='margin:0; padding-left:1.2em;'>",
+  paste0("<li>", cong_viec[[i]], "</li>", collapse = ""), "</ul></td>",
+  "<td style='", o_kieu, " text-align:center;'>100%</td>",
+  "</tr>"), character(1))
+cat("<p style='text-align:center; font-weight:bold; font-size:1.15em; margin:0.5em 0;'>BẢNG PHÂN CÔNG CÔNG VIỆC</p>",
+    "<table style='border-collapse:collapse; margin:0 auto 2em; font-size:0.95em;'>",
+    paste0("<tr>", paste0("<th style='", dau_kieu, "'>",
+                          c("STT", "Họ và tên", "MSHV", "Nội dung phụ trách", "Mức độ hoàn thành"), "</th>", collapse = ""), "</tr>"),
+    dong, "</table>", sep = "\n")
 ```
 
 ```{r all-exercises, results='asis', echo=FALSE}
