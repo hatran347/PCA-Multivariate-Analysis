@@ -1,6 +1,5 @@
 ---
 title: "Bài 5.8 — PCA và ảnh hưởng của đơn vị đo"
-author: "Hà Trần"
 date: "`r Sys.Date()`"
 output:
   html_document:
